@@ -23,7 +23,7 @@ locals {
   ci_deployer_sa_id = "gharchive-ci-deployer"
 
   scheduler_sa_roles = ["roles/run.invoker"]
-  runner_sa_roles = ["roles/storage.objectCreator"]
+  runner_sa_roles    = ["roles/storage.objectCreator"]
   ci_deployer_sa_roles = [
     "roles/cloudscheduler.admin",
     "roles/artifactregistry.admin",
