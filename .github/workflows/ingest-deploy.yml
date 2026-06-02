@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "ingest/**"
+      - "!ingest/README.md"
       - ".github/workflows/ingest-deploy.yml"
 
 permissions:
