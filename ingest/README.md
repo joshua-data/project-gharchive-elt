@@ -160,10 +160,20 @@ Because the app already retries aggressively per hour, **Cloud Scheduler is conf
 
 ### Option A — Python venv (fastest dev loop)
 
+Requires Python `>= 3.12` (enforced by `pyproject.toml`). If your system Python is older, the recommended path is `uv` — it installs a project-local Python and creates the venv in one step, without touching your system interpreter:
+
 ```bash
 cd ingest
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
+
+# If you don't already have Python 3.12 on your machine:
+uv python install 3.12
+uv venv --python 3.12 .venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+
+# Or, if you already have Python 3.12 system-wide:
+# python -m venv .venv && source .venv/bin/activate
+# pip install -e ".[dev]"
 
 cp .env.example .env
 # edit .env: set GCS_RAW_BUCKET, optionally TARGET_HOUR
@@ -173,6 +183,8 @@ python -m gharchive
 ```
 
 Logs go to stdout in the same format Cloud Run will see (`%(asctime)s %(levelname)s %(name)s %(message)s`).
+
+This Option-A venv is also what you use to **seed a Parquet file** before the first `terraform apply` of `bigquery.tf` — see *Bootstrap → first apply* in [`../terraform/README.md`](../terraform/README.md). Set `TARGET_HOUR=<YYYY-MM-DD-H>` (UTC, recent enough that gharchive has published it, e.g. yesterday) and run `python -m gharchive` once.
 
 ### Option B — Docker, via `scripts/backfill.sh`
 
