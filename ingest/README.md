@@ -7,31 +7,58 @@ Python service that powers the hourly ELT. Packaged as a Docker container and ex
 ## Internal call graph
 
 ```mermaid
-flowchart TD
-    MAIN["__main__.main()"]
-    RUN["__main__.run()"]
-    SETTINGS["config.Settings<br/>(env vars + .env)"]
-    RESOLVE["__main__.resolve_target_hours()"]
-    PROC["__main__.process_hour(hour)"]
-    CLIENT["gharchive_client.GharchiveClient<br/>.download_hour()"]
-    EVENT["models.Event.from_raw()"]
-    WRITER["gcs_writer.GCSWriter<br/>.write_parquet()"]
-    MARK["gcs_writer.GCSWriter<br/>.touch_empty_file()  → _SUCCESS"]
-    GHA["data.gharchive.org"]
-    GCS["GCS bucket"]
+flowchart TB
+    subgraph ENTRY["🚪 Entry & Config"]
+        direction TB
+        MAIN["⚡ __main__.main()"]
+        RUN["⚡ __main__.run()"]
+        SETTINGS["🛠️ config.Settings<br/><i>env vars + .env</i>"]
+        RESOLVE["🔍 resolve_target_hours()"]
+    end
+
+    subgraph PIPE["⚙️ Per-Hour Pipeline"]
+        direction TB
+        PROC["🔄 process_hour(hour)"]
+        CLIENT["📥 GharchiveClient<br/><i>.download_hour()</i>"]
+        EVENT["🏷️ Event.from_raw()"]
+        WRITER["🗂️ GCSWriter<br/><i>.write_parquet()</i>"]
+        MARK["✅ GCSWriter<br/><i>.touch_empty_file() → _SUCCESS</i>"]
+    end
+
+    subgraph EXT["📥 External Targets"]
+        direction TB
+        GHA["🌐 data.gharchive.org"]
+        GCS["🗄️ GCS bucket"]
+    end
 
     MAIN --> RUN
     RUN --> SETTINGS
     RUN --> RESOLVE
     RUN --> PROC
-    PROC -- "skip if _SUCCESS exists" --> WRITER
+    PROC -.->|"skip if _SUCCESS"| WRITER
     PROC --> CLIENT
-    CLIENT -- "GET .json.gz<br/>retry: 5× / 60s cap" --> GHA
+    CLIENT -->|"GET .json.gz<br/>retry 5× / 60s"| GHA
     CLIENT --> EVENT
     EVENT --> WRITER
     WRITER --> GCS
-    PROC -- "if bytes > 0" --> MARK
+    PROC -->|"if bytes > 0"| MARK
     MARK --> GCS
+
+    classDef primary   fill:#667eea,stroke:#764ba2,color:#fff,stroke-width:3px
+    classDef secondary fill:#4facfe,stroke:#00f2fe,color:#fff,stroke-width:2px
+    classDef success   fill:#38ef7d,stroke:#11998e,color:#1e293b,stroke-width:3px
+    classDef warning   fill:#fef3c7,stroke:#f59e0b,color:#78350f,stroke-width:2px
+    classDef neutral   fill:#f8fafc,stroke:#cbd5e1,color:#1e293b,stroke-width:1px
+
+    class MAIN,RUN,PROC primary
+    class CLIENT,WRITER secondary
+    class MARK success
+    class SETTINGS,RESOLVE,EVENT warning
+    class GHA,GCS neutral
+
+    style ENTRY fill:#667eea15,stroke:#667eea,stroke-width:2px
+    style PIPE fill:#f59e0b15,stroke:#f59e0b,stroke-width:2px
+    style EXT fill:#94a3b815,stroke:#94a3b8,stroke-width:2px
 ```
 
 ## Package layout
