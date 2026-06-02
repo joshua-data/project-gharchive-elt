@@ -1,6 +1,12 @@
 # project-gharchive-elt
 
-Hourly ELT pipeline that ingests [GitHub Archive](https://www.gharchive.org/) events into Google Cloud, lands them as Hive-partitioned Parquet in GCS, and exposes them through a BigQuery external table. The job runs as a Cloud Run Job triggered by Cloud Scheduler. All GCP infrastructure is managed by Terraform, and CI/CD runs in GitHub Actions using Workload Identity Federation — there are no service-account keys in the repo.
+**What this is:** an hourly ELT pipeline that ingests [GitHub Archive](https://www.gharchive.org/) events into Google Cloud — lands them as Hive-partitioned Parquet in GCS, exposes them through a BigQuery external table.
+
+**How it runs:** a Python container executes as a **Cloud Run Job**, triggered every hour by **Cloud Scheduler**. The container is built and deployed by GitHub Actions on every push to `main`.
+
+**How it's managed:** all GCP infrastructure (bucket, dataset, table, Cloud Run Job, scheduler, service accounts, IAM) lives in one Terraform root module under `terraform/`. CI/CD authenticates via **Workload Identity Federation** — no service-account keys exist anywhere in the repo or in GitHub.
+
+**Where to start:** if you're touching the pipeline → [`ingest/`](ingest/README.md). If you're touching the infra → [`terraform/`](terraform/README.md).
 
 ## Architecture
 

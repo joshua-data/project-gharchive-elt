@@ -1,6 +1,10 @@
 # terraform
 
-All GCP infrastructure for this project. One Terraform root module — no submodules, no workspaces — that provisions storage, BigQuery, the Cloud Run Job and its scheduler, all the service accounts and IAM, and the Workload Identity Federation pool that GitHub Actions uses for keyless authentication.
+**What this is:** the single Terraform root module that provisions *every* piece of GCP infrastructure this project depends on — no submodules, no workspaces. If a resource (bucket, dataset, table, Cloud Run Job, scheduler, service account, IAM binding, Artifact Registry repo, WIF pool / provider) exists in our GCP project, it was created here.
+
+**What you get out of an `apply`:** a Cloud Scheduler → Cloud Run Job → GCS → BigQuery pipeline, plus a Workload Identity Federation setup that lets GitHub Actions deploy and run Terraform itself with no service-account keys anywhere.
+
+**Where to start reading:** `locals.tf` (names + lifecycle constants), `iam.tf` (the three service accounts and what they can do), `wif.tf` (how GitHub Actions impersonates `gharchive-ci-deployer`).
 
 > ↩ Back to [project overview](../README.md). For the workload that runs *inside* the Cloud Run Job, see [`ingest/README.md`](../ingest/README.md).
 
@@ -20,7 +24,7 @@ flowchart LR
 
     subgraph SAS["👥 Service Accounts"]
         direction TB
-        CID["💼 ci-deployer<br/><i>broad project admin</i>"]
+        CID["💼 gharchive-ci-deployer<br/><i>broad project admin</i>"]
         RUN["🤖 gharchive-runner<br/><i>storage.objectCreator</i>"]
         INV["🤖 gharchive-invoker<br/><i>run.invoker</i>"]
     end
@@ -88,8 +92,8 @@ flowchart LR
 | `artifact_registry.tf` | Docker repo `gharchive` with two cleanup policies — keep the 10 most-recent versions, delete untagged images older than 24 h. |
 | `cloud_run_job.tf` | Job `gharchive` running as the `gharchive-runner` SA, env vars `GCS_RAW_BUCKET` / `LAG_HOURS` / `CATCHUP_HOURS`, CPU/memory/timeout from variables, `max_retries = 1`. Uses Google's placeholder `cloudrun/container/job` image at bootstrap; `lifecycle.ignore_changes = [containers[0].image]` so the CI image tag updates don't get reverted on `terraform apply`. |
 | `cloud_scheduler.tf` | Cron job that POSTs to the Job's `:run` admin endpoint as the `gharchive-invoker` SA. Retry policy: `retry_count = 0`, min/max backoff 30s/300s — intentional (see *Operational notes*). |
-| `iam.tf` | The three service accounts above. Project-scoped roles for `ci-deployer`; dataset-scoped `bigquery.dataOwner` plus project-scoped `bigquery.jobUser`; `gharchive-runner` gets bucket-scoped `storage.objectCreator`; `ci-deployer` is granted `iam.serviceAccountUser` on `gharchive-runner` so CI can deploy on its behalf. |
-| `wif.tf` | Pool `github-pool` + OIDC provider `github-provider`. Attribute mapping (`google.subject`, `attribute.repository`, `attribute.ref`, `attribute.actor`) and an **attribute condition** that hard-locks the provider to this repo on `main` or `refs/pull/*` only — nothing else in the org can mint a token that impersonates `ci-deployer`. |
+| `iam.tf` | The three service accounts above. Project-scoped admin roles for `gharchive-ci-deployer`; dataset-scoped `bigquery.dataOwner` plus project-scoped `bigquery.jobUser`; bucket-scoped `storage.objectAdmin` on the **tfstate** bucket (so CI can plan/apply); `gharchive-runner` gets bucket-scoped `storage.objectCreator` on the raw bucket; `gharchive-ci-deployer` is granted `iam.serviceAccountUser` on `gharchive-runner` so CI can deploy on its behalf. |
+| `wif.tf` | Pool `github-pool` + OIDC provider `github-provider`. Attribute mapping (`google.subject`, `attribute.repository`, `attribute.ref`, `attribute.actor`) and an **attribute condition** that hard-locks the provider to this repo on `main` or `refs/pull/*` only — nothing else in the org can mint a token that impersonates `gharchive-ci-deployer`. |
 | `main.tf` | Provider pin (`google ~> 5.40`), `terraform >= 1.6.0`, GCS backend (`bucket` & `prefix` passed at `init` time). |
 | `locals.tf` | Every magic string lives here — bucket / SA / job / dataset names, lifecycle rule values, IAM role lists, common labels. |
 | `variables.tf` / `outputs.tf` | Inputs / outputs (see tables below). |
@@ -113,13 +117,13 @@ sequenceDiagram
 
     rect rgb(79, 172, 254, 0.12)
         Note over Job,IAM: 🎫 Access Token Minting
-        Job->>IAM: generateAccessToken<br/>for ci-deployer SA
+        Job->>IAM: generateAccessToken<br/>for gharchive-ci-deployer SA
         IAM-->>Job: Short-lived access token
     end
 
     rect rgb(56, 239, 125, 0.12)
         Note over Job,GCP: ✅ Deploy Operations
-        Job->>GCP: gcloud / terraform / docker push<br/>(as ci-deployer)
+        Job->>GCP: gcloud / terraform / docker push<br/>(as gharchive-ci-deployer)
         GCP-->>Job: 200 OK
     end
 ```
@@ -133,11 +137,13 @@ No service-account key files are issued or stored anywhere.
 
 ## Input variables (`variables.tf`)
 
-| Name | Type | Default / Example | Notes |
+All variables are **required** — there are no defaults in `variables.tf`. The "Example" column shows the values shipped in `terraform.tfvars.example`.
+
+| Name | Type | Example | Notes |
 |---|---|---|---|
-| `project_id` | string | — | Target GCP project. |
+| `project_id` | string | `my-gcp-project-id` | Target GCP project. |
 | `region` | string | `asia-northeast3` | Region for all regional resources; GCS bucket co-located. |
-| `github_repo` | string | `owner/repo` | Pinned in the WIF attribute condition. |
+| `github_repo` | string | `owner/name` | Pinned in the WIF attribute condition. |
 | `lag_hours` | number | `1` | Passed to the Job as `LAG_HOURS`. Validator: `>= 0`. |
 | `catchup_hours` | number | `3` | Passed to the Job as `CATCHUP_HOURS`. Validator: `>= 0`. |
 | `schedule_cron` | string | `30 * * * *` | 5-field cron (validated by regex). Job timezone is `Etc/UTC`. |
@@ -151,16 +157,16 @@ Copy `terraform.tfvars.example` → `terraform.tfvars` to fill in.
 
 ## Outputs → GitHub secrets (`outputs.tf`)
 
-After `terraform apply`, copy these into the repo's Actions secrets — they're the only thing the workflows need.
+After `terraform apply`, copy these four outputs into the repo's Actions secrets — they're the only thing the workflows need.
 
 | Terraform output | GitHub secret | Used by |
 |---|---|---|
 | `project_id` | `GCP_PROJECT_ID` | both workflows |
 | `region` | `GCP_REGION` | both workflows |
 | `ci_deployer_sa_email` | `GCP_SA_EMAIL` | `google-github-actions/auth` (the SA to impersonate) |
-| `wif_provider` | `GCP_WIF_PROVIDER` | `google-github-actions/auth` (the provider resource path) |
+| `wif_provider_id` | `GCP_WIF_PROVIDER` | `google-github-actions/auth` (the provider resource path) |
 
-Other outputs (`raw_bucket`, `artifact_registry_repo`, `cloud_run_job_name`, `runner_sa_email`, `bq_dataset`) are informational — handy for `gcloud` one-liners and `bq` queries.
+Other outputs (`gharchive_bucket_name`, `artifact_repo_id`, `cloud_run_job_name`, `runner_sa_email`, `bq_dataset`) are informational — handy for `gcloud` one-liners and `bq` queries.
 
 ## Bootstrap → first apply (one-time)
 
@@ -171,13 +177,15 @@ cd terraform
 PROJECT_ID=my-gharchive-prod REGION=asia-northeast3 ./bootstrap.sh
 ```
 
-The script creates `gs://${PROJECT_ID}-tfstate` with versioning, UBLA, public-access-prevention, and a noncurrent-version lifecycle (keep recent versions ≤ 10, delete others older than 90 days). It's idempotent — safe to re-run.
+The script creates the state bucket with versioning, UBLA, public-access-prevention, and a noncurrent-version lifecycle (keep recent versions ≤ 10, delete others older than 90 days). It's idempotent — safe to re-run.
+
+> **Bucket name must match `local.tfstate_bucket_name`** (`${PROJECT_ID}-gharchive-tfstate`). `iam.tf` grants `gharchive-ci-deployer` `roles/storage.objectAdmin` on exactly that name — if the bucket lives anywhere else, CI applies fail at backend lock time.
 
 Then:
 
 ```bash
 terraform init \
-  -backend-config="bucket=${PROJECT_ID}-tfstate" \
+  -backend-config="bucket=${PROJECT_ID}-gharchive-tfstate" \
   -backend-config="prefix=terraform/state"
 
 cp terraform.tfvars.example terraform.tfvars
@@ -195,7 +203,7 @@ After the first apply:
 
 ## CI/CD wiring
 
-- **`.github/workflows/terraform.yml`** — runs on PR and push to `main` for `terraform/**`. Authenticates via WIF, runs `fmt -check` + `validate` + `plan`. On PRs the plan is posted as a sticky comment. On `main` it `apply`s the saved plan. Concurrency group `terraform-{ref}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
+- **`.github/workflows/terraform.yml`** — runs on PR and push to `main` for `terraform/**`. Authenticates via WIF, pins `terraform_version: 1.9.5` via `hashicorp/setup-terraform`, then runs `fmt -check -recursive` + `validate` + `plan`. On PRs the plan is posted as a PR comment (truncated to 50000 chars if needed). On `main` it `apply`s the saved `tfplan`. Concurrency group `terraform-${{ github.ref }}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
 - **`.github/workflows/ingest-deploy.yml`** — runs on push to `main` for `ingest/**`. Builds the image, pushes to Artifact Registry tagged with `${{ github.sha }}`, then `gcloud run jobs update gharchive --image=…` flips the Job to the new tag. Lifecycle ignore in `cloud_run_job.tf` is what makes this safe to do out-of-band from Terraform.
 - **`.github/dependabot.yml`** keeps the Action versions current (weekly, max 5 open PRs).
 
@@ -205,6 +213,6 @@ A few choices in here look conservative — they're deliberate:
 
 - **`scheduler_retry_count = 0` + `cloud_run_job_max_retries = 1`.** The ingest container already retries every HTTP fetch up to 5× (`GharchiveClient._fetch_with_retry`) and re-attempts gap hours every run via `CATCHUP_HOURS`. Adding scheduler retries would risk a second invocation racing a still-running first one, and Cloud Run Job retries can't distinguish "really failed" from "gharchive hasn't published this hour yet". See [`ingest/README.md`](../ingest/README.md) for the retry semantics.
 - **GCS lifecycle tiering (30d → Nearline, 90d → Coldline, 730d → delete).** Hot partitions stay on Standard for BigQuery query performance; older partitions get cheaper without breaking the external table (BigQuery reads all three classes transparently).
-- **Dataset-scoped `bigquery.dataOwner`, project-wide `bigquery.jobUser`.** `ci-deployer` can do anything inside `raw__gharchive` but can't read or write any other dataset in the project.
-- **WIF attribute condition pinned to `main` + PRs.** Prevents anyone with push access to an arbitrary branch from minting tokens that impersonate `ci-deployer`.
+- **Dataset-scoped `bigquery.dataOwner`, project-wide `bigquery.jobUser`.** `gharchive-ci-deployer` can do anything inside `raw__gharchive` but can't read or write any other dataset in the project.
+- **WIF attribute condition pinned to `main` + PRs.** Prevents anyone with push access to an arbitrary branch from minting tokens that impersonate `gharchive-ci-deployer`.
 - **External table, not native.** GCS is the source of truth; BigQuery just queries it. Reprocessing an hour is "delete the Parquet + `_SUCCESS`, rerun the Job" — no `MERGE`s, no partition swaps.
