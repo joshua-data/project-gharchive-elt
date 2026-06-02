@@ -8,41 +8,74 @@ All GCP infrastructure for this project. One Terraform root module — no submod
 
 ```mermaid
 flowchart LR
-    subgraph GH["GitHub repo (main / PRs)"]
-        GHA["GitHub Actions"]
+    subgraph GH["🗂️ GitHub repo<br/><i>main / PRs</i>"]
+        GHA["⚙️ GitHub Actions"]
     end
 
-    subgraph WIF["Workload Identity Federation"]
-        POOL["github-pool"]
-        PROV["github-provider<br/>(OIDC, repo+ref pinned)"]
+    subgraph WIF["🔒 Workload Identity Federation"]
+        direction TB
+        POOL["🏗️ github-pool"]
+        PROV["🔍 github-provider<br/><i>OIDC, repo+ref pinned</i>"]
     end
 
-    CID["SA: ci-deployer<br/><i>broad project admin</i>"]
-    RUN["SA: gharchive-runner<br/><i>storage.objectCreator</i>"]
-    INV["SA: gharchive-invoker<br/><i>run.invoker</i>"]
+    subgraph SAS["👥 Service Accounts"]
+        direction TB
+        CID["💼 ci-deployer<br/><i>broad project admin</i>"]
+        RUN["🤖 gharchive-runner<br/><i>storage.objectCreator</i>"]
+        INV["🤖 gharchive-invoker<br/><i>run.invoker</i>"]
+    end
 
-    AR["Artifact Registry<br/><i>gharchive (Docker)</i>"]
-    SCH["Cloud Scheduler<br/><i>gharchive</i>"]
-    JOB["Cloud Run Job<br/><i>gharchive</i>"]
-    GCS["GCS bucket<br/><i>{project}-gharchive</i>"]
-    BQDS["BigQuery dataset<br/><i>raw__gharchive</i>"]
-    BQT["External table<br/><i>ext__events</i>"]
+    subgraph INFRA["☁️ GCP Resources"]
+        direction TB
+        AR["📦 Artifact Registry<br/><i>gharchive (Docker)</i>"]
+        SCH["📅 Cloud Scheduler<br/><i>gharchive</i>"]
+        JOB["⚡ Cloud Run Job<br/><i>gharchive</i>"]
+    end
+
+    subgraph DATA["📊 Data Layer"]
+        direction TB
+        GCS["🗄️ GCS bucket<br/><i>{project}-gharchive</i>"]
+        BQDS[("📊 BigQuery dataset<br/><i>raw__gharchive</i>")]
+        BQT["✅ External table<br/><i>ext__events</i>"]
+    end
 
     GHA --> POOL --> PROV
-    PROV -- "impersonates" --> CID
-    CID -- "manages" --> AR
-    CID -- "manages" --> SCH
-    CID -- "manages" --> JOB
-    CID -- "manages" --> GCS
-    CID -- "manages" --> BQDS
-    CID -- "impersonates (deploy)" --> RUN
+    PROV -->|"impersonates"| CID
+    CID -->|"manages"| AR
+    CID -->|"manages"| SCH
+    CID -->|"manages"| JOB
+    CID -->|"manages"| GCS
+    CID -->|"manages"| BQDS
+    CID -.->|"impersonates (deploy)"| RUN
 
-    SCH -- "POST :run as" --> INV
+    SCH -->|"POST :run as"| INV
     INV --> JOB
-    JOB -- "runs as" --> RUN
-    JOB -- "writes Parquet" --> GCS
+    JOB -->|"runs as"| RUN
+    JOB -->|"writes Parquet"| GCS
     GCS --> BQT
     BQT --> BQDS
+
+    classDef primary   fill:#667eea,stroke:#764ba2,color:#fff,stroke-width:3px
+    classDef secondary fill:#4facfe,stroke:#00f2fe,color:#fff,stroke-width:2px
+    classDef accent    fill:#f093fb,stroke:#f5576c,color:#fff,stroke-width:2px
+    classDef alert     fill:#f5576c,stroke:#c0392b,color:#fff,stroke-width:3px
+    classDef success   fill:#38ef7d,stroke:#11998e,color:#1e293b,stroke-width:3px
+    classDef warning   fill:#fef3c7,stroke:#f59e0b,color:#78350f,stroke-width:2px
+    classDef neutral   fill:#f8fafc,stroke:#cbd5e1,color:#1e293b,stroke-width:1px
+
+    class JOB,SCH primary
+    class GCS,RUN,INV secondary
+    class CID alert
+    class POOL,PROV warning
+    class AR warning
+    class BQT,BQDS success
+    class GHA neutral
+
+    style GH fill:#94a3b815,stroke:#94a3b8,stroke-width:2px
+    style WIF fill:#f5576c15,stroke:#f5576c,stroke-width:2px
+    style SAS fill:#f093fb15,stroke:#f093fb,stroke-width:2px
+    style INFRA fill:#667eea15,stroke:#667eea,stroke-width:2px
+    style DATA fill:#38ef7d15,stroke:#38ef7d,stroke-width:2px
 ```
 
 ## What gets created, file by file
@@ -66,18 +99,29 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Job as GitHub Actions job
-    participant STS as Google STS
-    participant IAM as IAM Credentials API
-    participant GCP as GCP APIs
+    participant Job as ⚙️ GitHub Actions
+    participant STS as 🔒 Google STS
+    participant IAM as 🎫 IAM Credentials
+    participant GCP as ☁️ GCP APIs
 
-    Job->>STS: OIDC token from token.actions.githubusercontent.com
-    Note over STS: Verifies provider attribute condition:<br/>repository == var.github_repo<br/>ref == main OR refs/pull/*
-    STS-->>Job: Federated access token (principalSet)
-    Job->>IAM: generateAccessToken for ci-deployer SA
-    IAM-->>Job: Short-lived access token
-    Job->>GCP: gcloud / terraform / docker push (as ci-deployer)
-    GCP-->>Job: 200 OK
+    rect rgb(102, 126, 234, 0.12)
+        Note over Job,STS: 🔐 OIDC Token Exchange
+        Job->>STS: OIDC token<br/>(token.actions.githubusercontent.com)
+        Note over STS: Verify attribute condition<br/>repository == var.github_repo<br/>ref == main OR refs/pull/*
+        STS-->>Job: Federated access token<br/>(principalSet)
+    end
+
+    rect rgb(79, 172, 254, 0.12)
+        Note over Job,IAM: 🎫 Access Token Minting
+        Job->>IAM: generateAccessToken<br/>for ci-deployer SA
+        IAM-->>Job: Short-lived access token
+    end
+
+    rect rgb(56, 239, 125, 0.12)
+        Note over Job,GCP: ✅ Deploy Operations
+        Job->>GCP: gcloud / terraform / docker push<br/>(as ci-deployer)
+        GCP-->>Job: 200 OK
+    end
 ```
 
 At runtime (independent of CI):
