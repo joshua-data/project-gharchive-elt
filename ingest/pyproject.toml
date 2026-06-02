@@ -1,0 +1,34 @@
+[project]
+name = "gharchive"
+version = "0.1.0"
+description = "GH Archive ELT — Cloud Run Job that lands hourly GitHub event archives as Parquet to GCS"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27,<0.29",
+    "google-cloud-storage>=2.18.0,<3.0",
+    "pydantic>=2.7.0,<3.0",
+    "pydantic-settings>=2.4.0,<3.0",
+    "pyarrow>=14.0,<18.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6,<0.7",
+]
+
+[project.scripts]
+gharchive = "gharchive.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

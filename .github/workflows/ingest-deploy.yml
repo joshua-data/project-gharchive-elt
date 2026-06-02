@@ -1,0 +1,58 @@
+name: ingest-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ingest/**"
+      - ".github/workflows/ingest-deploy.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  IMAGE_NAME: ingest
+  REPO_NAME: gharchive
+  JOB_NAME: gharchive
+
+concurrency:
+  group: ingest-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - id: auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+
+      - name: configure docker auth
+        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: build image
+        run: |
+          IMAGE="${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPO_NAME}/${IMAGE_NAME}"
+          docker build -t "${IMAGE}:${{ github.sha }}" .
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: push image
+        run: docker push "${IMAGE}:${{ github.sha }}"
+
+      - name: update Cloud Run Job image
+        run: |
+          gcloud run jobs update "${JOB_NAME}" \
+            --image="${IMAGE}:${{ github.sha }}" \
+            --region="${{ secrets.GCP_REGION }}" \
+            --project="${{ secrets.GCP_PROJECT_ID }}"

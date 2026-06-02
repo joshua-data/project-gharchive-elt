@@ -1,0 +1,14 @@
+project_id  = "your-gcp-project-id"
+region      = "asia-northeast3"
+github_repo = "owner/name"
+
+lag_hours     = 1
+catchup_hours = 3
+
+schedule_cron         = "30 * * * *"
+scheduler_retry_count = 0
+
+cloud_run_job_max_retries = 1
+cloud_run_job_timeout     = "900s"
+cloud_run_job_cpu         = "1"
+cloud_run_job_memory      = "1Gi"

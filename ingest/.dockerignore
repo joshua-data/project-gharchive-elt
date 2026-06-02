@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+.ruff_cache
+.venv
+venv
+*.egg-info
+.git
+.gitignore
+README.md
