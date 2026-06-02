@@ -88,11 +88,11 @@ flowchart LR
 |---|---|
 | `apis.tf` | Enables `cloudresourcemanager`, `iam`, `iamcredentials`, `sts`, `artifactregistry`, `run`, `cloudscheduler`, `storage`, `bigquery`. `disable_on_destroy = false` so `terraform destroy` doesn't turn off APIs other systems may rely on. |
 | `gcs.tf` | Raw bucket `{project}-gharchive` — UBLA, public-access-prevention enforced, 7-day soft-delete window, and a lifecycle that promotes objects Standard → Nearline (30d) → Coldline (90d) → delete (180d). |
-| `bigquery.tf` | Dataset `raw__gharchive` and external table `ext__events` over `gs://{bucket}/events/dt=*/hr=*/*.parquet` with `hive_partitioning_options.mode = "AUTO"` and `autodetect = true`. `deletion_protection = true`. |
+| `bigquery.tf` | Dataset `raw__gharchive` and external table `ext__events` over `gs://{bucket}/events/*.parquet` with `hive_partitioning_options.mode = "AUTO"` (which auto-discovers the `dt=YYYY-MM-DD/hr=HH/` partition keys from the path) and `autodetect = true`. `deletion_protection = true`. Note: at least one Parquet file must exist under the prefix before the table is created — `autodetect` reads it to infer the schema. |
 | `artifact_registry.tf` | Docker repo `gharchive` with two cleanup policies — keep the 10 most-recent versions, delete untagged images older than 24 h. |
 | `cloud_run_job.tf` | Job `gharchive` running as the `gharchive-runner` SA, env vars `GCS_RAW_BUCKET` / `LAG_HOURS` / `CATCHUP_HOURS`, CPU/memory/timeout from variables, `max_retries = 1`. Uses Google's placeholder `cloudrun/container/job` image at bootstrap; `lifecycle.ignore_changes = [containers[0].image]` so the CI image tag updates don't get reverted on `terraform apply`. |
 | `cloud_scheduler.tf` | Cron job that POSTs to the Job's `:run` admin endpoint as the `gharchive-invoker` SA. Retry policy: `retry_count = 0`, min/max backoff 30s/300s — intentional (see *Operational notes*). |
-| `iam.tf` | The three service accounts above. `gharchive-ci-deployer` gets only the project-scoped roles CI actually needs to *update* infra (`run.developer`, `cloudscheduler.admin`, `artifactregistry.admin`) — no IAM/serviceusage/WIF admin (those are bootstrap-only and applied locally). Plus: dataset-scoped `bigquery.dataOwner` + project-scoped `bigquery.jobUser`; bucket-scoped `storage.objectAdmin` on the **tfstate** bucket; `iam.serviceAccountUser` on `gharchive-runner` so CI can deploy on its behalf. `gharchive-runner` gets bucket-scoped `storage.objectCreator` on the raw bucket. |
+| `iam.tf` | The three service accounts above. `gharchive-ci-deployer` gets the project-scoped roles CI needs to *update* infra (`run.developer`, `cloudscheduler.admin`, `artifactregistry.admin`) **plus `roles/viewer`** — viewer is required because `terraform plan` refreshes state of *every* managed resource (SAs, WIF pool/provider, BigQuery dataset, etc.) and refresh needs read access even on things CI can't modify. Project-level write IAM (serviceusage, IAM admin, WIF admin) is intentionally absent — those bootstrap changes are applied locally with owner-level creds. Plus: dataset-scoped `bigquery.dataOwner` + project-scoped `bigquery.jobUser`; bucket-scoped `roles/storage.admin` on **both the tfstate and gharchive buckets** (admin is needed because Terraform refresh of `google_storage_bucket_iam_member` resources calls `storage.buckets.getIamPolicy`, which is *not* in `roles/viewer` or `storage.objectAdmin`); `iam.serviceAccountUser` on `gharchive-runner` so CI can deploy on its behalf. `gharchive-runner` gets bucket-scoped `storage.objectCreator` on the raw bucket. |
 | `wif.tf` | Pool `github-pool` + OIDC provider `github-provider`. Attribute mapping (`google.subject`, `attribute.repository`, `attribute.ref`, `attribute.actor`) and an **attribute condition** that hard-locks the provider to this repo on `main` only — PR branches cannot mint a token, so `gharchive-ci-deployer` is unreachable from any PR workflow. |
 | `main.tf` | Provider pin (`google ~> 5.40`), `terraform >= 1.6.0`, GCS backend (`bucket` & `prefix` passed at `init` time). |
 | `locals.tf` | Every magic string lives here — bucket / SA / job / dataset names, lifecycle rule values, IAM role lists, common labels. |
@@ -137,23 +137,26 @@ No service-account key files are issued or stored anywhere.
 
 ## Input variables (`variables.tf`)
 
-All variables are **required** — there are no defaults in `variables.tf`. The "Example" column shows the values shipped in `terraform.tfvars.example`.
+Variables fall into two groups:
 
-| Name | Type | Example | Notes |
+- **Required (3):** environment-specific values with no defaults — `project_id`, `region`, `github_repo`. These must be supplied via `terraform.tfvars` (local) or `TF_VAR_*` env vars (CI — set automatically by the workflow, see *CI/CD wiring*).
+- **Operational defaults (8):** sensible defaults baked into `variables.tf`. Override in `terraform.tfvars` only if you need to tune.
+
+| Name | Type | Default | Notes |
 |---|---|---|---|
-| `project_id` | string | `my-gcp-project-id` | Target GCP project. |
-| `region` | string | `asia-northeast3` | Region for all regional resources; GCS bucket co-located. |
-| `github_repo` | string | `owner/name` | Pinned in the WIF attribute condition. |
+| `project_id` | string | *(required)* | Target GCP project. |
+| `region` | string | *(required)* | Region for all regional resources; GCS bucket co-located. |
+| `github_repo` | string | *(required)* | Pinned in the WIF attribute condition. In CI, auto-populated from `${{ github.repository }}`. |
 | `lag_hours` | number | `1` | Passed to the Job as `LAG_HOURS`. Validator: `>= 0`. |
 | `catchup_hours` | number | `3` | Passed to the Job as `CATCHUP_HOURS`. Validator: `>= 0`. |
-| `schedule_cron` | string | `30 * * * *` | 5-field cron (validated by regex). Job timezone is `Etc/UTC`. |
+| `schedule_cron` | string | `"30 * * * *"` | 5-field cron (validated by regex). Job timezone is `Etc/UTC`. |
 | `scheduler_retry_count` | number | `0` | See *Operational notes*. Validator: `>= 0`. |
 | `cloud_run_job_max_retries` | number | `1` | See *Operational notes*. Validator: `>= 0`. |
-| `cloud_run_job_timeout` | string | `900s` | Per-task wall-clock cap. |
-| `cloud_run_job_cpu` | string | `1` | vCPU per task. |
-| `cloud_run_job_memory` | string | `1Gi` | Memory per task. |
+| `cloud_run_job_timeout` | string | `"900s"` | Per-task wall-clock cap. |
+| `cloud_run_job_cpu` | string | `"1"` | vCPU per task. |
+| `cloud_run_job_memory` | string | `"1Gi"` | Memory per task. |
 
-Copy `terraform.tfvars.example` → `terraform.tfvars` to fill in.
+For local runs, copy `terraform.tfvars.example` → `terraform.tfvars` and fill in at least the three required values. `terraform.tfvars` is gitignored by design (CI gets the same values via `TF_VAR_*` from GitHub secrets, not from a committed file).
 
 ## Outputs → GitHub secrets (`outputs.tf`)
 
@@ -179,7 +182,7 @@ PROJECT_ID=my-gharchive-prod REGION=asia-northeast3 ./bootstrap.sh
 
 The script creates the state bucket with versioning, UBLA, public-access-prevention, and a noncurrent-version lifecycle (keep recent versions ≤ 10, delete others older than 90 days). It's idempotent — safe to re-run.
 
-> **Bucket name must match `local.tfstate_bucket_name`** (`${PROJECT_ID}-gharchive-tfstate`). `iam.tf` grants `gharchive-ci-deployer` `roles/storage.objectAdmin` on exactly that name — if the bucket lives anywhere else, CI applies fail at backend lock time.
+> **Bucket name must match `local.tfstate_bucket_name`** (`${PROJECT_ID}-gharchive-tfstate`). `iam.tf` grants `gharchive-ci-deployer` `roles/storage.admin` on exactly that name — if the bucket lives anywhere else, CI applies fail at backend lock time.
 
 Then:
 
@@ -199,11 +202,17 @@ After the first apply:
 
 1. Copy the four outputs above into GitHub repo secrets.
 2. Push to `main` → `ingest-deploy.yml` builds the first real image and points the Job at it (replacing the bootstrap placeholder).
-3. From here on, all infra changes go through `terraform.yml` (plan + apply on push to `main`). Run `terraform plan` locally before merging — the workflow no longer posts plans to PRs (PR branches cannot authenticate to WIF by design).
+3. From here on, all infra changes go through `terraform.yml` (plan + apply on push to `main`). Run `terraform plan` locally before merging — the workflow does not post plans to PRs (PR branches cannot authenticate to WIF by design).
+
+**Known first-apply gotchas:**
+
+- **IAM propagation races.** When the API is freshly enabled, dependent resources occasionally hit `Error 403: Permission denied` on the first apply. Re-running `terraform apply` is the fix — Terraform is idempotent and picks up where it left off.
+- **BigQuery external table needs a seed file.** `google_bigquery_table.gharchive_events` uses `autodetect = true` to infer schema from existing Parquet, so the first apply will fail with `Failed to expand table … matched no files` if the bucket is empty. Run a one-hour local ingest (`cd ingest && python -m gharchive` with `GCS_RAW_BUCKET=<bucket>` and `TARGET_HOUR=<YYYY-MM-DD-H>`) to drop one Parquet file under `gs://{bucket}/events/dt=…/hr=…/`, then re-run `terraform apply`. After the first scheduled Job run lands new data, this never happens again.
+- **Race between `google_bigquery_table` and `google_bigquery_dataset`, or between WIF pool and provider.** Both pairs use string-literal IDs (`local.bq_dataset_id`, `local.wif_pool_id`) instead of resource references, so Terraform's implicit dependency graph misses the edge. First apply may fail with a 404 on the dependent resource — re-running apply resolves it.
 
 ## CI/CD wiring
 
-- **`.github/workflows/terraform.yml`** — runs on push to `main` for `terraform/**`. Authenticates via WIF, pins `terraform_version: 1.9.5` via `hashicorp/setup-terraform`, then runs `fmt -check -recursive` + `validate` + `plan` + `apply` of the saved `tfplan`. PRs intentionally do not trigger this workflow — the WIF attribute condition only mints tokens for `refs/heads/main`, so run `terraform plan` locally before opening a PR. Concurrency group `terraform-${{ github.ref }}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
+- **`.github/workflows/terraform.yml`** — runs on push to `main` for `terraform/**`. Authenticates via WIF, pins `terraform_version: 1.9.5` via `hashicorp/setup-terraform`, then runs `fmt -check -recursive` + `init` + `validate` + `plan` + `apply` of the saved `tfplan`. Required variables are supplied via `TF_VAR_*` env vars at the job level: `TF_VAR_project_id` and `TF_VAR_region` from GitHub secrets, `TF_VAR_github_repo` from the built-in `${{ github.repository }}` context (no separate secret). Operational-tuning variables fall back to defaults in `variables.tf`. PRs intentionally do not trigger this workflow — the WIF attribute condition only mints tokens for `refs/heads/main`, so run `terraform plan` locally before opening a PR. Concurrency group `terraform-${{ github.ref }}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
 - **`.github/workflows/ingest-deploy.yml`** — runs on push to `main` for `ingest/**`. Builds the image, pushes to Artifact Registry tagged with `${{ github.sha }}`, then `gcloud run jobs update gharchive --image=…` flips the Job to the new tag. Lifecycle ignore in `cloud_run_job.tf` is what makes this safe to do out-of-band from Terraform.
 - **`.github/dependabot.yml`** keeps the Action versions current (weekly, max 5 open PRs).
 
