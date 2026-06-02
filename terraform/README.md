@@ -199,11 +199,11 @@ After the first apply:
 
 1. Copy the four outputs above into GitHub repo secrets.
 2. Push to `main` → `ingest-deploy.yml` builds the first real image and points the Job at it (replacing the bootstrap placeholder).
-3. From here on, all infra changes go through `terraform.yml` (plan on PR, apply on `main`).
+3. From here on, all infra changes go through `terraform.yml` (plan on PRs targeting `main`, apply on push to `main`).
 
 ## CI/CD wiring
 
-- **`.github/workflows/terraform.yml`** — runs on PR and push to `main` for `terraform/**`. Authenticates via WIF, pins `terraform_version: 1.9.5` via `hashicorp/setup-terraform`, then runs `fmt -check -recursive` + `validate` + `plan`. On PRs the plan is posted as a PR comment (truncated to 50000 chars if needed). On `main` it `apply`s the saved `tfplan`. Concurrency group `terraform-${{ github.ref }}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
+- **`.github/workflows/terraform.yml`** — runs on PRs targeting `main` and on push to `main` for `terraform/**` (PRs against any other base branch are intentionally ignored). Authenticates via WIF, pins `terraform_version: 1.9.5` via `hashicorp/setup-terraform`, then runs `fmt -check -recursive` + `validate` + `plan`. On PRs the plan is posted as a PR comment (truncated to 50000 chars if needed). On `main` it `apply`s the saved `tfplan`. Concurrency group `terraform-${{ github.ref }}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
 - **`.github/workflows/ingest-deploy.yml`** — runs on push to `main` for `ingest/**`. Builds the image, pushes to Artifact Registry tagged with `${{ github.sha }}`, then `gcloud run jobs update gharchive --image=…` flips the Job to the new tag. Lifecycle ignore in `cloud_run_job.tf` is what makes this safe to do out-of-band from Terraform.
 - **`.github/dependabot.yml`** keeps the Action versions current (weekly, max 5 open PRs).
 
