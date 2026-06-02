@@ -51,8 +51,15 @@ resource "google_project_iam_member" "ci_deployer_roles" {
 
 resource "google_storage_bucket_iam_member" "ci_deployer_tfstate_bucket_roles" {
   bucket = local.tfstate_bucket_name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.admin"
   member = "serviceAccount:${google_service_account.ci_deployer.email}"
+}
+
+resource "google_storage_bucket_iam_member" "ci_deployer_gharchive_bucket_roles" {
+  bucket     = local.gharchive_bucket_name
+  role       = "roles/storage.admin"
+  member     = "serviceAccount:${google_service_account.ci_deployer.email}"
+  depends_on = [google_storage_bucket.gharchive]
 }
 
 resource "google_service_account_iam_member" "ci_deployer_acts_as_runner" {
