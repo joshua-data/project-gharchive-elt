@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "terraform/**"
+      - "!terraform/README.md"
       - ".github/workflows/terraform.yml"
 
 permissions:
