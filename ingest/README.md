@@ -1,6 +1,10 @@
 # ingest
 
-Python service that powers the hourly ELT. Packaged as a Docker container and executed as a Cloud Run Job (see [`terraform/`](../terraform/README.md)). For each target hour it downloads `https://data.gharchive.org/{YYYY-MM-DD-H}.json.gz`, transforms each event into a stable Parquet schema, and writes a single Hive-partitioned file to GCS plus an empty `_SUCCESS` marker.
+**What this is:** the workload that runs *inside* the hourly Cloud Run Job. Everything else in this repo (Terraform, GitHub Actions) exists to ship and schedule this one Python container.
+
+**What it does, per scheduled run:** resolves which UTC hour(s) to process, downloads `https://data.gharchive.org/{YYYY-MM-DD-H}.json.gz` for each, normalizes events into a stable Parquet schema, and lands them as a single Hive-partitioned file in GCS alongside an empty `_SUCCESS` marker. Idempotent: a run that finds `_SUCCESS` already in place is a no-op.
+
+**Where to start reading code:** `src/gharchive/__main__.py` — `main()` → `run()` → `resolve_target_hours()` → `process_hour()` is the whole pipeline.
 
 > ↩ Back to [project overview](../README.md).
 
@@ -132,7 +136,7 @@ Read by `config.Settings` (`config.py`); the Cloud Run Job sets the runtime ones
 |---|---|---|---|
 | `GCS_RAW_BUCKET` | *(required)* | Terraform: `cloud_run_job.tf` | Target bucket name. |
 | `LAG_HOURS` | `1` | Terraform var | Process the hour finished this many hours ago. gharchive publishes ~1h behind UTC. |
-| `CATCHUP_HOURS` | `0` | Terraform var | Also re-attempt the previous N hours — free gap recovery thanks to `_SUCCESS`. |
+| `CATCHUP_HOURS` | `3` | Terraform var | Also re-attempt the previous N hours — free gap recovery thanks to `_SUCCESS`. Set to `0` to reproduce the original single-hour behavior. |
 | `TARGET_HOUR` | *(empty)* | local / backfill | Single hour, format `YYYY-MM-DD-H`. Overrides auto mode. |
 | `TARGET_START_HOUR` | *(empty)* | local / backfill | Range start (inclusive). Overrides everything else if paired with end. |
 | `TARGET_END_HOUR` | *(empty)* | local / backfill | Range end (inclusive). |
