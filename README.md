@@ -60,7 +60,7 @@ flowchart LR
 |---|---|
 | [`ingest/`](ingest/README.md) | Python 3.12 container — downloads the hourly `.json.gz` from gharchive.org, transforms to a stable schema, writes Parquet to GCS. **Start here if you're touching pipeline code.** |
 | [`terraform/`](terraform/README.md) | All GCP infrastructure as code — bucket, BigQuery dataset/external table, Cloud Run Job, Scheduler, IAM, WIF. **Start here if you're touching infra.** |
-| `.github/workflows/` | CI/CD — `ingest-deploy.yml` builds/pushes the image and updates the Cloud Run Job; `terraform.yml` plans on PRs targeting `main` and applies on push to `main`. |
+| `.github/workflows/` | CI/CD — `ingest-deploy.yml` builds/pushes the image and updates the Cloud Run Job; `terraform.yml` plans + applies on push to `main`. |
 
 ## End-to-end flow
 
