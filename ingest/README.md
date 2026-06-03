@@ -100,22 +100,9 @@ gs://{GCS_RAW_BUCKET}/
 
 The Hive-style `dt=` / `hr=` prefixes are what makes the BigQuery external table partitioning work (`partitioning_mode = "AUTO"` in [`terraform/bigquery.tf`](../terraform/bigquery.tf)).
 
-The Parquet schema (defined in `gcs_writer.PARQUET_SCHEMA`) is intentionally narrow:
+The Parquet schema (defined in `gcs_writer.PARQUET_SCHEMA`) is intentionally narrow — 8 event fields (`id`, `type`, `actor`, `repo`, `payload`, `public`, `created_at`, `org`) plus 2 lineage fields (`hour`, `ingested_at`). All are non-nullable except `org`. The nested fields (`actor`, `repo`, `payload`, `org`) are stored as JSON-encoded strings — see below.
 
-| Field | Type | Nullable | Source |
-|---|---|---|---|
-| `id` | `int64` | no | event |
-| `type` | `string` | no | event |
-| `actor` | `string` (JSON-encoded) | no | event |
-| `repo` | `string` (JSON-encoded) | no | event |
-| `payload` | `string` (JSON-encoded) | no | event |
-| `public` | `bool` | no | event |
-| `created_at` | `string` (ISO-8601) | no | event |
-| `org` | `string` (JSON-encoded) | yes | event |
-| `hour` | `string` (`YYYY-MM-DD-H`) | no | lineage |
-| `ingested_at` | `string` (ISO-8601) | no | lineage |
-
-> **Why nested fields are JSON strings.** GitHub's event payloads are polymorphic and evolve: `PushEvent.payload` and `PullRequestEvent.payload` share almost nothing, and new event types appear over time. Forcing them into a single Parquet struct schema would either lose fields or break on drift. Storing them as JSON strings keeps the Parquet contract stable forever; downstream BigQuery queries unpack with `JSON_VALUE` / `JSON_QUERY` per event type. The two top-level lineage fields (`hour`, `ingested_at`) make it trivial to debug "which run wrote this row?".
+> **Why nested fields are JSON strings.** GitHub's event payloads are polymorphic and evolve: `PushEvent.payload` and `PullRequestEvent.payload` share almost nothing, and new event types appear over time. A single struct schema would either drop fields or break on drift. JSON strings keep the Parquet contract stable forever; downstream BigQuery queries unpack with `JSON_VALUE` / `JSON_QUERY` per event type. The lineage fields (`hour`, `ingested_at`) make it trivial to trace "which run wrote this row?".
 
 ## Idempotency contract
 
@@ -130,20 +117,19 @@ This is why partial / interrupted runs are safe: Parquet always lands before the
 
 ## Environment variables
 
-Read by `config.Settings` (`config.py`); the Cloud Run Job sets the runtime ones from Terraform.
+Read by `config.Settings` (`config.py`). Cloud Run Job sets the runtime ones from Terraform; other vars are local/backfill overrides.
 
-| Var | Default | Set where | Purpose |
-|---|---|---|---|
-| `GCS_RAW_BUCKET` | *(required)* | Terraform: `cloud_run_job.tf` | Target bucket name. |
-| `LAG_HOURS` | `1` | Terraform var | Process the hour finished this many hours ago. gharchive publishes ~1h behind UTC. |
-| `CATCHUP_HOURS` | `3` | Terraform var | Also re-attempt the previous N hours — free gap recovery thanks to `_SUCCESS`. Set to `0` to reproduce the original single-hour behavior. |
-| `TARGET_HOUR` | *(empty)* | local / backfill | Single hour, format `YYYY-MM-DD-H`. Overrides auto mode. |
-| `TARGET_START_HOUR` | *(empty)* | local / backfill | Range start (inclusive). Overrides everything else if paired with end. |
-| `TARGET_END_HOUR` | *(empty)* | local / backfill | Range end (inclusive). |
-| `GHARCHIVE_BASE_URL` | `https://data.gharchive.org` | (rarely) | Useful for tests / mocks. |
-| `HTTP_TIMEOUT` | `120.0` | (rarely) | Per-request timeout in seconds. |
+| Var | Set where | Purpose |
+|---|---|---|
+| `GCS_RAW_BUCKET` (**required**) | Terraform (`cloud_run_job.tf`) | Target bucket name. |
+| `LAG_HOURS` (default `1`) | Terraform var | Process the hour finished this many hours ago. gharchive publishes ~1h behind UTC. |
+| `CATCHUP_HOURS` (default `3`) | Terraform var | Also re-attempt the previous N hours — free gap recovery via `_SUCCESS`. `0` for single-hour mode. |
+| `TARGET_HOUR` | local / backfill | Single hour `YYYY-MM-DD-H`. Overrides auto mode. |
+| `TARGET_START_HOUR` + `TARGET_END_HOUR` | local / backfill | Inclusive range. |
 
-`.env` is supported for local runs (see `.env.example`). The Cloud Run Job ignores `.env` and reads from container env directly.
+`GHARCHIVE_BASE_URL` and `HTTP_TIMEOUT` are testing knobs — see `config.py` for defaults.
+
+`.env` is supported for local runs (see `.env.example`). The Cloud Run Job ignores `.env` and reads container env directly.
 
 ## Retries & timeouts
 

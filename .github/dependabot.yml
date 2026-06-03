@@ -9,3 +9,13 @@ updates:
       prefix: ci
     assignees:
       - joshua-data
+
+  - package-ecosystem: pip
+    directory: /dbt
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps(dbt)
+    assignees:
+      - joshua-data
