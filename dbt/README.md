@@ -29,7 +29,7 @@ dbt/
 
 - **Raw source:** `raw__gharchive.ext__events` (BigQuery external table over Hive-partitioned Parquet in GCS).
 - **Curated dataset:** `dw` (Terraform-provisioned, `asia-northeast3`).
-- **Local dev dataset:** `dw_dev` (auto-created on first run; override with `DBT_DEV_DATASET`).
+- **Local dev dataset:** `dw_dev` (Terraform-provisioned alongside `dw` — see [`../terraform/bigquery.tf`](../terraform/bigquery.tf); override with `DBT_DEV_DATASET`).
 - **Location:** all datasets are in `asia-northeast3`. dbt-bigquery uses the `location` from `profiles.yml`.
 - **Variables:** `batch_date` is reserved for incremental models (`{{ var('batch_date') }}`) and conventionally refers to **the day before the run** (i.e., yesterday UTC relative to schedule start). Default empty → models should treat empty as "yesterday UTC".
 
@@ -100,17 +100,18 @@ for d in $(seq 0 6); do
 done
 ```
 
-Prod backfills (`--target prod` against `dw`) are not supported from CI — `dbt-run.yml` only exposes a `schedule` trigger. Local prod runs also require `bigquery.dataEditor` on `dw`, which only `gharchive-dbt-runner` has by default. To backfill prod, temporarily re-add a `workflow_dispatch` trigger to `dbt-run.yml`.
+Prod backfills via CI are not directly supported — `dbt-run.yml` is triggered only by `schedule` (daily) and by `push` to `main` on `dbt/**` (excluding `dbt/README.md`) and the workflow file itself. Both of those always resolve `batch_date` to yesterday UTC, so they can't target an arbitrary past day. Local prod runs also require `bigquery.dataEditor` on `dw`, which only `gharchive-dbt-runner` has by default. To backfill a specific historical date in prod, temporarily add a `workflow_dispatch` trigger (with a `batch_date` input) to `dbt-run.yml`, or run locally while impersonating `gharchive-dbt-runner`.
 
 ## CI/CD
 
 | When | Workflow | What it does |
 |---|---|---|
-| `0 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt deps` → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` → `dbt docs generate` → push docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/` |
-| Manual | *(not configured)* | `workflow_dispatch` is not wired up; the workflow only fires on schedule |
+| `0 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` → `dbt docs generate` → push docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/` |
+| `push` → `main` on `dbt/**` (excluding `dbt/README.md`) or the workflow file | `.github/workflows/dbt-run.yml` (`push`) | Same steps as the scheduled run, with `batch_date` again resolved to yesterday UTC. Every merge that touches `dbt/` therefore re-runs prod once. |
+| Manual | *(not configured)* | `workflow_dispatch` is not wired up — add it temporarily for historical backfills |
 | PR | *(none — by design)* | dbt CI is not run on PRs; the WIF attribute condition refuses non-`main` refs |
 
-The schedule trigger always runs against `main` (GitHub's default), so it satisfies the WIF condition `assertion.ref == "refs/heads/main"`. The `dbt-runner` SA is impersonated using the same WIF pool as `terraform.yml` / `ingest-deploy.yml`.
+Both triggers (schedule and push-to-`main`) run against `main`, so they satisfy the WIF condition `assertion.ref == "refs/heads/main"`. The `dbt-runner` SA is impersonated using the same WIF pool as `terraform.yml` / `ingest-deploy.yml`.
 
 ## Required GitHub secrets (in addition to the existing four)
 

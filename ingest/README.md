@@ -136,7 +136,7 @@ Read by `config.Settings` (`config.py`). Cloud Run Job sets the runtime ones fro
 `GharchiveClient._fetch_with_retry`:
 
 - **5 attempts** total.
-- Backoff = `min(retry_backoff * attempt, 60.0)` seconds.
+- Backoff = `retry_backoff * attempt` seconds, additionally **capped at 60 s** on the 404 path. With defaults (`retry_backoff = 5`, `max_retries = 5`) max delay is 25 s anyway, so the cap only kicks in if those defaults are raised.
 - **Retryable:** HTTP 404 (file not yet published), HTTP 5xx, network errors, timeouts.
 - **Not retryable:** other HTTP errors (4xx other than 404) — fail fast.
 

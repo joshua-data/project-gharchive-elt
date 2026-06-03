@@ -24,10 +24,10 @@ flowchart LR
 
     subgraph SAS["👥 Service Accounts"]
         direction TB
-        CID["💼 gharchive-ci-deployer<br/><i>scoped: run/scheduler/AR + tfstate/runner/BQ</i>"]
-        RUN["🤖 gharchive-runner<br/><i>storage.objectCreator</i>"]
+        CID["💼 gharchive-ci-deployer<br/><i>run/scheduler/AR + IAM admin + BQ</i>"]
+        RUN["🤖 gharchive-runner<br/><i>storage.objectCreator/Viewer</i>"]
         INV["🤖 gharchive-invoker<br/><i>run.invoker</i>"]
-        DBT["🤖 gharchive-dbt-runner<br/><i>bigquery.dataEditor (dw)</i>"]
+        DBT["🤖 gharchive-dbt-runner<br/><i>bigquery.dataEditor (dw / dw_dev)</i>"]
     end
 
     subgraph INFRA["☁️ GCP Resources"]
@@ -43,6 +43,7 @@ flowchart LR
         BQDS[("📊 BigQuery dataset<br/><i>raw__gharchive</i>")]
         BQT["✅ External table<br/><i>ext__events</i>"]
         DW[("📈 BigQuery dataset<br/><i>dw (curated by dbt)</i>")]
+        DWDEV[("🧪 BigQuery dataset<br/><i>dw_dev (local dbt dev)</i>")]
     end
 
     GHA --> POOL --> PROV
@@ -54,6 +55,7 @@ flowchart LR
     CID -->|"manages"| GCS
     CID -->|"manages"| BQDS
     CID -->|"manages"| DW
+    CID -->|"manages"| DWDEV
     CID -.->|"impersonates (deploy)"| RUN
 
     SCH -->|"POST :run as"| INV
@@ -78,7 +80,7 @@ flowchart LR
     class CID,DBT alert
     class POOL,PROV warning
     class AR warning
-    class BQT,BQDS,DW success
+    class BQT,BQDS,DW,DWDEV success
     class GHA neutral
 
     style GH fill:#94a3b815,stroke:#94a3b8,stroke-width:2px
@@ -94,10 +96,10 @@ flowchart LR
 |---|---|
 | `apis.tf` | Enables `cloudresourcemanager`, `iam`, `iamcredentials`, `sts`, `artifactregistry`, `run`, `cloudscheduler`, `storage`, `bigquery`. `disable_on_destroy = false` so `terraform destroy` doesn't turn off APIs other systems may rely on. |
 | `gcs.tf` | Raw bucket `{project}-gharchive` — UBLA, public-access-prevention enforced, 7-day soft-delete window, and a lifecycle that promotes objects Standard → Nearline (30d) → Coldline (90d) → delete (180d). |
-| `bigquery.tf` | Two datasets in `var.region`: `raw__gharchive` (raw layer) with external table `ext__events` over `gs://{bucket}/events/*.parquet` with `hive_partitioning_options.mode = "AUTO"` and `autodetect = true` (`deletion_protection = true`); and `dw` (curated layer) where dbt materializes models from the raw events. Note: at least one Parquet file must exist under the raw prefix before the external table is created — `autodetect` reads it to infer the schema. |
+| `bigquery.tf` | Three datasets in `var.region`: `raw__gharchive` (raw layer) with external table `ext__events` over `gs://{bucket}/events/*.parquet` with `hive_partitioning_options.mode = "AUTO"` and `autodetect = true` (`deletion_protection = true`); `dw` (curated layer) where the scheduled dbt run materializes models; and `dw_dev` (local-development counterpart of `dw`, used by `profiles.yml`'s `dev` target). Note: at least one Parquet file must exist under the raw prefix before the external table is created — `autodetect` reads it to infer the schema. |
 | `artifact_registry.tf` | Docker repo `gharchive` with two cleanup policies — keep the 10 most-recent versions, delete untagged images older than 24 h. |
 | `cloud_run_job.tf` | Job `gharchive` running as the `gharchive-runner` SA, env vars `GCS_RAW_BUCKET` / `LAG_HOURS` / `CATCHUP_HOURS`, CPU/memory/timeout from variables, `max_retries = 1`. Uses Google's placeholder `cloudrun/container/job` image at bootstrap; `lifecycle.ignore_changes = [containers[0].image]` so the CI image tag updates don't get reverted on `terraform apply`. |
-| `cloud_scheduler.tf` | Cron job that POSTs to the Job's `:run` admin endpoint as the `gharchive-invoker` SA. Retry policy: `retry_count = 0`, min/max backoff 30s/300s — intentional (see *Operational notes*). |
+| `cloud_scheduler.tf` | Cron job that POSTs to the Job's `:run` admin endpoint as the `gharchive-invoker` SA. Retry policy: `retry_count = 0`, min/max backoff 30s/300s, `max_doublings = 3` — intentional (see *Operational notes*). |
 | `iam.tf` | The four service accounts and their role bindings — see [Service accounts](#service-accounts) below for the design choices. |
 | `wif.tf` | Pool `github-pool` + OIDC provider `github-provider`. Attribute mapping (`google.subject`, `attribute.repository`, `attribute.ref`, `attribute.actor`) and an **attribute condition** that hard-locks the provider to this repo on `main` only — PR branches cannot mint a token, so neither `gharchive-ci-deployer` nor `gharchive-dbt-runner` is reachable from any PR workflow. Both SAs grant `roles/iam.workloadIdentityUser` to the same `principalSet` (the repo). Schedule workflows (e.g. dbt daily run) check out at the default branch (`main`), so they pass the condition. |
 | `main.tf` | Provider pin (`google ~> 5.40`), `terraform >= 1.6.0`, GCS backend (`bucket` & `prefix` passed at `init` time). |
@@ -160,7 +162,7 @@ After `terraform apply`, copy these five outputs into the repo's Actions config 
 | `wif_provider_id` | `GCP_WIF_PROVIDER` | Secret | `google-github-actions/auth` (the provider resource path) |
 | `dbt_runner_sa_email` | `DBT_RUNNER_SA_EMAIL` | Secret | `google-github-actions/auth` for `dbt-run.yml` (the dbt SA to impersonate) |
 
-Other outputs (`gharchive_bucket_name`, `artifact_repo_id`, `cloud_run_job_name`, `runner_sa_email`, `bq_dataset`, `bq_dw_dataset`) are informational — handy for `gcloud` one-liners and `bq` queries.
+Other outputs (`gharchive_bucket_name`, `artifact_repo_id`, `cloud_run_job_name`, `runner_sa_email`, `bq_dataset`, `bq_dw_dataset`, `bq_dw_dev_dataset`) are informational — handy for `gcloud` one-liners and `bq` queries.
 
 ## Bootstrap → first apply (one-time)
 
@@ -205,24 +207,26 @@ After the first apply:
 
 - **`.github/workflows/terraform.yml`** — runs on push to `main` for `terraform/**`. Authenticates via WIF, pins `terraform_version: 1.9.5` via `hashicorp/setup-terraform`, then runs `fmt -check -recursive` + `init` + `validate` + `plan` + `apply` of the saved `tfplan`. Required variables are supplied via `TF_VAR_*` env vars at the job level: `TF_VAR_project_id` and `TF_VAR_region` from GitHub secrets, `TF_VAR_github_repo` from the built-in `${{ github.repository }}` context (no separate secret). Operational-tuning variables fall back to defaults in `variables.tf`. PRs intentionally do not trigger this workflow — the WIF attribute condition only mints tokens for `refs/heads/main`, so run `terraform plan` locally before opening a PR. Concurrency group `terraform-${{ github.ref }}` with `cancel-in-progress: false` serialises applies against the GCS state lock.
 - **`.github/workflows/ingest-deploy.yml`** — runs on push to `main` for `ingest/**`. Builds the image, pushes to Artifact Registry tagged with `${{ github.sha }}`, then `gcloud run jobs update gharchive --image=…` flips the Job to the new tag. Lifecycle ignore in `cloud_run_job.tf` is what makes this safe to do out-of-band from Terraform.
-- **`.github/dependabot.yml`** keeps the Action versions current (weekly, max 5 open PRs).
+- **`.github/dependabot.yml`** tracks two ecosystems weekly (max 5 open PRs each): `github-actions` at the repo root, and `pip` under `/dbt` (for `dbt-core` / `dbt-bigquery`). The ingest `pyproject.toml` is not on Dependabot — pin updates land via manual PRs.
 
 ## Service accounts
 
 | SA | Used by | Roles |
 |---|---|---|
-| `gharchive-ci-deployer` | GitHub Actions (`terraform.yml`, `ingest-deploy.yml`) via WIF | project: `viewer`, `run.developer`, `cloudscheduler.admin`, `artifactregistry.admin`, `bigquery.jobUser`. bucket: `storage.admin` on tfstate + raw buckets. dataset: `bigquery.dataOwner` on `raw__gharchive` and `dw`. impersonation: `iam.serviceAccountUser` on `gharchive-runner`. |
+| `gharchive-ci-deployer` | GitHub Actions (`terraform.yml`, `ingest-deploy.yml`) via WIF | project: `viewer`, `run.developer`, `cloudscheduler.admin`, `artifactregistry.admin`, `iam.serviceAccountAdmin`, `resourcemanager.projectIamAdmin`, `bigquery.jobUser`, `bigquery.dataEditor`. bucket: `storage.admin` on tfstate + raw buckets. dataset: `bigquery.dataOwner` on `raw__gharchive`, `dw`, and `dw_dev`. impersonation: `iam.serviceAccountUser` on `gharchive-runner`. |
 | `gharchive-runner` | Cloud Run Job runtime | bucket: `storage.objectCreator` + `storage.objectViewer` on raw bucket. |
 | `gharchive-invoker` | Cloud Scheduler → Cloud Run Job admin API | project: `run.invoker`. |
-| `gharchive-dbt-runner` | GitHub Actions (`dbt-run.yml`) via WIF | project: `bigquery.jobUser`, `bigquery.readSessionUser`. dataset: `bigquery.dataViewer` on `raw__gharchive`, `bigquery.dataEditor` on `dw`. |
+| `gharchive-dbt-runner` | GitHub Actions (`dbt-run.yml`) via WIF | project: `bigquery.jobUser`, `bigquery.readSessionUser`. dataset: `bigquery.dataViewer` on `raw__gharchive`, `bigquery.dataEditor` on `dw` and `dw_dev`. |
 
 **Why the non-obvious choices:**
 
 - **`roles/viewer` on ci_deployer** — `terraform plan` refreshes every managed resource; refresh needs read on resources CI cannot modify (SAs, WIF pool/provider, etc.).
+- **`iam.serviceAccountAdmin` + `resourcemanager.projectIamAdmin` on ci_deployer** — Terraform manages all four service accounts and their project / dataset / bucket IAM bindings. Without these, every IAM diff would require a local apply with owner creds, defeating the point of CI-driven Terraform.
+- **Project-level `bigquery.dataEditor` on ci_deployer** — needed for refresh on dataset-level resources whose ACLs cross dataset boundaries; dataset-scoped `dataOwner` alone is not enough for some refresh paths.
 - **`storage.admin` (not `storage.objectAdmin`) on tfstate + raw buckets** — refresh of `google_storage_bucket_iam_member` calls `getIamPolicy`, which isn't in viewer/objectAdmin.
 - **`storage.objectViewer` on runner** — the ingest container calls `blob.exists()` for the `_SUCCESS` idempotency contract; `objectCreator` alone 403s.
 
-ci_deployer intentionally lacks project-level IAM/serviceusage/WIF admin — those bootstrap edits are applied locally with owner creds.
+ci_deployer is a high-privilege identity (project IAM admin). The blast-radius mitigation is **at the WIF layer**, not the role layer: the OIDC provider only mints tokens for this repo on `refs/heads/main` (see `wif.tf` attribute condition), so a malicious PR — which is necessarily on a non-`main` ref — cannot reach ci_deployer at all. Bootstrap edits that predate the WIF pool itself are still applied locally with owner creds.
 
 ## Operational notes
 
@@ -230,6 +234,6 @@ A few choices in here look conservative — they're deliberate:
 
 - **`scheduler_retry_count = 0` + `cloud_run_job_max_retries = 1`.** The ingest container already retries every HTTP fetch up to 5× (`GharchiveClient._fetch_with_retry`) and re-attempts gap hours every run via `CATCHUP_HOURS`. Adding scheduler retries would risk a second invocation racing a still-running first one, and Cloud Run Job retries can't distinguish "really failed" from "gharchive hasn't published this hour yet". See [`ingest/README.md`](../ingest/README.md) for the retry semantics.
 - **GCS lifecycle tiering (30d → Nearline, 90d → Coldline, 180d → delete).** Hot partitions stay on Standard for BigQuery query performance; older partitions get cheaper without breaking the external table (BigQuery reads all three classes transparently). 180-day retention is sized for portfolio/demo analytics — bump it via `gcs_delete_age_days` in `locals.tf` if you need a longer window.
-- **Dataset-scoped `bigquery.dataOwner`, project-wide `bigquery.jobUser`.** `gharchive-ci-deployer` can do anything inside `raw__gharchive` and `dw`, but can't touch other datasets in the project.
-- **WIF attribute condition pinned to `main` only.** PR branches cannot mint tokens — combined with the scoped `ci_deployer` roles (no project IAM/serviceusage/WIF admin), a malicious PR has no path to the GCP project. Trade-off: PR `terraform plan` comments aren't possible without a separate read-only SA; run plan locally instead.
+- **Dataset-scoped `bigquery.dataOwner` on `raw__gharchive` / `dw` / `dw_dev`, project-wide `bigquery.jobUser` + `bigquery.dataEditor`.** ci_deployer fully owns the three project-managed datasets and can run jobs / edit data project-wide; it does not get `dataOwner` on datasets it didn't create. dbt_runner is narrower: read-only on `raw__gharchive`, writer on `dw` / `dw_dev`.
+- **WIF attribute condition pinned to `main` only.** ci_deployer holds project IAM admin, so the blast radius is contained by *who can assume it*, not by *what it can do*. Only the OIDC subject `repository == var.github_repo && ref == "refs/heads/main"` can mint a token — PR branches fail the condition outright. Trade-off: PR `terraform plan` comments aren't possible without a separate read-only SA; run plan locally instead.
 - **External table, not native.** GCS is the source of truth; BigQuery just queries it. Reprocessing an hour is "delete the Parquet + `_SUCCESS`, rerun the Job" — no `MERGE`s, no partition swaps.
