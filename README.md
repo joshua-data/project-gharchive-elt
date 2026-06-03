@@ -67,7 +67,7 @@ flowchart LR
 |---|---|
 | [`ingest/`](ingest/README.md) | Python 3.12 container — downloads the hourly `.json.gz` from gharchive.org, transforms to a stable schema, writes Parquet to GCS. **Start here if you're touching pipeline code.** |
 | [`dbt/`](dbt/README.md) | dbt project (dbt-core / dbt-bigquery `1.11`) — transforms `raw__gharchive.ext__events` into curated tables under `dw`. Profiles point at BigQuery via OAuth (ADC locally, WIF impersonation in CI). **Start here if you're writing transformation SQL.** |
-| [`terraform/`](terraform/README.md) | All GCP infrastructure as code — bucket, BigQuery datasets (`raw__gharchive`, `dw`), external table, Cloud Run Job, Scheduler, IAM, WIF. **Start here if you're touching infra.** |
+| [`terraform/`](terraform/README.md) | All GCP infrastructure as code — bucket, BigQuery datasets (`raw__gharchive`, `dw`, `dw_dev`), external table, Cloud Run Job, Scheduler, IAM, WIF. **Start here if you're touching infra.** |
 | `.github/workflows/` | CI/CD — `terraform.yml` plans + applies on push to `main`; `ingest-deploy.yml` builds/pushes the image and updates the Cloud Run Job; `dbt-run.yml` runs daily `dbt build` and publishes docs to `joshua-data.github.io`. |
 
 ## End-to-end flow
@@ -78,7 +78,7 @@ flowchart LR
 4. Otherwise it downloads `https://data.gharchive.org/{YYYY-MM-DD-H}.json.gz` with a retry loop (404/5xx/network → retry up to 5×, backoff capped at 60s).
 5. JSON-Lines are streamed into a stable Parquet schema (Snappy-compressed) and uploaded to `gs://{project}-gharchive/events/dt=YYYY-MM-DD/hr=HH/YYYY-MM-DD-HH.parquet`, followed by an empty `_SUCCESS` sibling.
 6. The **BigQuery external table** (`raw__gharchive.ext__events`) is configured with Hive partitioning AUTO, so new partitions become queryable immediately — no metadata refresh needed.
-7. **dbt** (`dbt-run.yml`, daily `0 6 * * *` UTC) impersonates `gharchive-dbt-runner` via WIF, runs `dbt build --target prod --vars '{run_date: <today UTC>}'` against BigQuery (materializes into `dw`), generates docs, and pushes them to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`.
+7. **dbt** (`dbt-run.yml`, daily `0 6 * * *` UTC) impersonates `gharchive-dbt-runner` via WIF, runs `dbt build --target prod --vars '{batch_date: <yesterday UTC>}'` against BigQuery (materializes into `dw`), generates docs, and pushes them to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`.
 
 ## Tech stack
 
