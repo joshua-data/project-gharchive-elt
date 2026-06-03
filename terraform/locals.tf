@@ -35,9 +35,13 @@ locals {
     "roles/cloudscheduler.admin",
     "roles/artifactregistry.admin",
     "roles/run.developer",
+    "roles/iam.serviceAccountAdmin",
   ]
   ci_deployer_bq_dataset_roles = ["roles/bigquery.dataOwner"]
-  ci_deployer_bq_project_roles = ["roles/bigquery.jobUser"]
+  ci_deployer_bq_project_roles = [
+    "roles/bigquery.jobUser",
+    "roles/bigquery.dataEditor",
+  ]
   dbt_runner_bq_project_roles = [
     "roles/bigquery.jobUser",
     "roles/bigquery.readSessionUser"
