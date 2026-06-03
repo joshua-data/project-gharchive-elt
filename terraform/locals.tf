@@ -36,6 +36,7 @@ locals {
     "roles/artifactregistry.admin",
     "roles/run.developer",
     "roles/iam.serviceAccountAdmin",
+    "roles/resourcemanager.projectIamAdmin",
   ]
   ci_deployer_bq_dataset_roles = ["roles/bigquery.dataOwner"]
   ci_deployer_bq_project_roles = [
