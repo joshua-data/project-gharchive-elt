@@ -40,11 +40,11 @@ jobs:
       - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
 
       - name: configure docker auth
-        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
 
       - name: build image
         run: |
-          IMAGE="${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPO_NAME}/${IMAGE_NAME}"
+          IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPO_NAME}/${IMAGE_NAME}"
           docker build -t "${IMAGE}:${{ github.sha }}" .
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
@@ -55,5 +55,5 @@ jobs:
         run: |
           gcloud run jobs update "${JOB_NAME}" \
             --image="${IMAGE}:${{ github.sha }}" \
-            --region="${{ secrets.GCP_REGION }}" \
-            --project="${{ secrets.GCP_PROJECT_ID }}"
+            --region="${{ vars.GCP_REGION }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}"
