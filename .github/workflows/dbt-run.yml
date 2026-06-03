@@ -1,0 +1,111 @@
+name: dbt-run
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - "dbt/**"
+      - "!dbt/README.md"
+      - ".github/workflows/dbt-run.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: dbt-run-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DBT_PROFILES_DIR: .
+  DBT_TARGET: prod
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+
+jobs:
+  dbt:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dbt
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-python@5db1cf9a59fb97c40a68accab29236f0da7e94db # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: dbt/requirements.txt
+
+      - name: install dbt
+        run: pip install -r requirements.txt
+
+      - id: auth
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.DBT_RUNNER_SA_EMAIL }}
+
+      - name: dbt debug
+        run: dbt debug --target "$DBT_TARGET"
+
+      - name: cache dbt packages
+        uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ hashFiles('dbt/package-lock.yml', 'dbt/packages.yml') }}
+
+      - name: dbt deps
+        run: dbt deps
+
+      - name: resolve batch_date
+        id: resolve_batch_date
+        run: |
+          BATCH_DATE=$(date -u -d "1 day ago" +%Y-%m-%d)
+          echo "batch_date=$BATCH_DATE" >> "$GITHUB_OUTPUT"
+
+      - name: dbt build
+        env:
+          BATCH_DATE: ${{ steps.resolve_batch_date.outputs.batch_date }}
+        run: |
+          set -euo pipefail
+          ARGS=(--vars "{\"batch_date\": \"$BATCH_DATE\"}")
+          dbt build --target "$DBT_TARGET" "${ARGS[@]}"
+      
+      - name: dbt docs generate
+        run: |
+          dbt docs generate --target "$DBT_TARGET"
+      
+      - name: checkout docs site
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: joshua-data/joshua-data.github.io
+          token: ${{ secrets.DBT_DOCS_DEPLOY_TOKEN }}
+          path: docs-site
+      
+      - name: publish dbt docs
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          DEST="docs-site/project-gharchive-elt/dbt-docs"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+
+          for f in index.html manifest.json catalog.json run_results.json; do
+            cp "dbt/target/$f" "$DEST/"
+          done
+
+          cd docs-site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add project-gharchive-elt/dbt-docs
+          if git diff --cached --quiet; then
+            echo "no docs changes to publish"
+            exit 0
+          fi
+          git commit -m "chore(dbt-docs): update from gharchive-elt@${GITHUB_SHA::7} (batch_date=${{ steps.resolve_batch_date.outputs.batch_date }})"
+          git push

@@ -10,8 +10,10 @@ locals {
   scheduler_job_id   = "gharchive"
   scheduler_timezone = "Etc/UTC"
 
-  bq_dataset_id = "raw__gharchive"
-  bq_table_id   = "ext__events"
+  bq_dataset_id        = "raw__gharchive"
+  bq_table_id          = "ext__events"
+  bq_dw_dataset_id     = "dw"
+  bq_dw_dev_dataset_id = "dw_dev"
 
   gcs_nearline_age_days = 30
   gcs_coldline_age_days = 90
@@ -21,6 +23,7 @@ locals {
   scheduler_sa_id   = "gharchive-invoker"
   runner_sa_id      = "gharchive-runner"
   ci_deployer_sa_id = "gharchive-ci-deployer"
+  dbt_runner_sa_id  = "gharchive-dbt-runner"
 
   scheduler_sa_roles = ["roles/run.invoker"]
   runner_sa_roles = [
@@ -35,6 +38,13 @@ locals {
   ]
   ci_deployer_bq_dataset_roles = ["roles/bigquery.dataOwner"]
   ci_deployer_bq_project_roles = ["roles/bigquery.jobUser"]
+  dbt_runner_bq_project_roles = [
+    "roles/bigquery.jobUser",
+    "roles/bigquery.readSessionUser"
+  ]
+  dbt_runner_bq_dataset_roles        = ["roles/bigquery.dataViewer"]
+  dbt_runner_bq_dw_dataset_roles     = ["roles/bigquery.dataEditor"]
+  dbt_runner_bq_dw_dev_dataset_roles = ["roles/bigquery.dataEditor"]
 
   placeholder_image = "us-docker.pkg.dev/cloudrun/container/job:latest"
 

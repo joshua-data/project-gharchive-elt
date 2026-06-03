@@ -81,3 +81,55 @@ resource "google_bigquery_dataset_iam_member" "ci_deployer_bq_dataset_roles" {
   role       = each.value
   member     = "serviceAccount:${google_service_account.ci_deployer.email}"
 }
+
+resource "google_bigquery_dataset_iam_member" "ci_deployer_bq_dw_dataset_roles" {
+  for_each   = toset(local.ci_deployer_bq_dataset_roles)
+  dataset_id = local.bq_dw_dataset_id
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.ci_deployer.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "ci_deployer_bq_dw_dev_dataset_roles" {
+  for_each   = toset(local.ci_deployer_bq_dataset_roles)
+  dataset_id = local.bq_dw_dev_dataset_id
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.ci_deployer.email}"
+}
+
+# =============================================================================
+# dbt runner SA
+# — impersonated by GitHub Actions via WIF.
+# =============================================================================
+resource "google_service_account" "dbt_runner" {
+  account_id   = local.dbt_runner_sa_id
+  display_name = "gharchive GitHub Actions CI dbt runner (impersonated via WIF)"
+  depends_on   = [google_project_service.api_enabled]
+}
+
+resource "google_project_iam_member" "dbt_runner_bq_project_roles" {
+  for_each = toset(local.dbt_runner_bq_project_roles)
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.dbt_runner.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "dbt_runner_bq_dataset_roles" {
+  for_each   = toset(local.dbt_runner_bq_dataset_roles)
+  dataset_id = local.bq_dataset_id
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.dbt_runner.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "dbt_runner_bq_dw_dataset_roles" {
+  for_each   = toset(local.dbt_runner_bq_dw_dataset_roles)
+  dataset_id = local.bq_dw_dataset_id
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.dbt_runner.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "dbt_runner_bq_dw_dev_dataset_roles" {
+  for_each   = toset(local.dbt_runner_bq_dw_dev_dataset_roles)
+  dataset_id = local.bq_dw_dev_dataset_id
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.dbt_runner.email}"
+}

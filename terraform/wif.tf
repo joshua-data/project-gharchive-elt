@@ -30,3 +30,9 @@ resource "google_service_account_iam_member" "github_repo_acts_as_ci_deployer" {
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repo}"
 }
+
+resource "google_service_account_iam_member" "github_repo_acts_as_dbt_runner" {
+  service_account_id = google_service_account.dbt_runner.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repo}"
+}
