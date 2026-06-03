@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-python@5db1cf9a59fb97c40a68accab29236f0da7e94db # v5.6.0
+      - uses: actions/setup-python@c8813ba1bc76ebf779b911ad8ffccbf2e449cb48 # v5.6.0
         with:
           python-version: "3.12"
           cache: "pip"
