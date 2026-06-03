@@ -1,0 +1,23 @@
+dw:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'joshua-data') }}"
+      dataset: "{{ env_var('DBT_DEV_DATASET', 'dw_dev') }}"
+      location: "{{ env_var('GCP_REGION', 'asia-northeast3') }}"
+      threads: 4
+      timeout_seconds: 300
+      priority: interactive
+      job_retries: 1
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'joshua-data') }}"
+      dataset: "{{ env_var('DBT_PROD_DATASET', 'dw') }}"
+      location: "{{ env_var('GCP_REGION', 'asia-northeast3') }}"
+      threads: 4
+      timeout_seconds: 600
+      priority: batch
+      job_retries: 1
