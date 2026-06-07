@@ -1,0 +1,23 @@
+version: 2
+
+macros:
+  - name: batch_filter
+    description: |
+      Renders a date-range predicate for the `where` clause of batch/incremental models.
+
+      Window resolution order:
+      ① args (`start_date` + `end_date`)
+      → ② vars (`batch_start_date` + `batch_end_date`)
+      → ③ var (`batch_date`, with a 1-day lookback).
+      
+      Raises a compile error if none resolve, to prevent full scans.
+    arguments:
+      - name: date_col
+        type: string
+        description: Name of the `DATE` column to filter on. Defaults to `dt` (the Hive partition column on `raw__gharchive.ext__events`).
+      - name: start_date
+        type: string
+        description: Explicit start date (`YYYY-MM-DD`, inclusive). Takes precedence over vars only when paired with `end_date`.
+      - name: end_date
+        type: string
+        description: Explicit end date (`YYYY-MM-DD`, inclusive). Only honored when paired with `start_date`.

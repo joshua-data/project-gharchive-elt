@@ -1,0 +1,25 @@
+version: 2
+
+macros:
+  - name: get_where_subquery
+    description: |
+      Overrides dbt's built-in `get_where_subquery` to rewrite `__batch_start_date__` / `__batch_end_date__` placeholders
+      in a test's `where` config into `date 'YYYY-MM-DD'` literals at compile time.
+
+      Lets test yml scope assertions to the batch window without embedding {% raw %}`{{ var('...') }}`{% endraw %}.
+      Falls back to the built-in behavior when no placeholder is present.
+    arguments:
+      - name: relation
+        type: relation
+        description: Target `Relation` passed in automatically by dbt. Not called directly.
+
+  - name: replace_batch_dates
+    description: |
+      Helper used by `get_where_subquery`. Replaces `__batch_start_date__` / `__batch_end_date__` tokens in a string with `date '...'` literals.
+
+      Values resolve from `batch_start_date` / `batch_end_date` vars, falling back to `batch_date`.
+      Unlike `batch_filter`, no 1-day lookback is applied (the model layer already handles it).
+    arguments:
+      - name: where_string
+        type: string
+        description: The node's raw `where` config string.
