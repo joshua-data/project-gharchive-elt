@@ -50,6 +50,7 @@ locals {
   dbt_runner_bq_dataset_roles        = ["roles/bigquery.dataViewer"]
   dbt_runner_bq_dw_dataset_roles     = ["roles/bigquery.dataEditor"]
   dbt_runner_bq_dw_dev_dataset_roles = ["roles/bigquery.dataEditor"]
+  dbt_runner_gharchive_bucket_roles  = ["roles/storage.objectViewer"]
 
   placeholder_image = "us-docker.pkg.dev/cloudrun/container/job:latest"
 
