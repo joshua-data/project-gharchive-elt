@@ -75,8 +75,12 @@ jobs:
           dbt build --target "$DBT_TARGET" "${ARGS[@]}"
       
       - name: dbt docs generate
+        env:
+          BATCH_DATE: ${{ steps.resolve_batch_date.outputs.batch_date }}
         run: |
-          dbt docs generate --target "$DBT_TARGET"
+          set -euo pipefail
+          ARGS=(--vars "{\"batch_date\": \"$BATCH_DATE\"}")
+          dbt docs generate --target "$DBT_TARGET" "${ARGS[@]}"
       
       - name: checkout docs site
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
