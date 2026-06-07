@@ -1,0 +1,143 @@
+version: 2
+
+models:
+  - name: stg_fact__events
+    config:
+      meta:
+        owner: joshua
+      tags: ["stg", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - event_name
+        - repo_id
+    description: |
+      One row per GitHub public event sourced from the GH Archive feed (https://www.gharchive.org/), itself a mirror of the GitHub Events REST API.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types)
+
+      - Grain: one event.
+      - Primary key: `event_id`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`event_name`, `repo_id`)
+
+      Deduplication across re-ingests is enforced in the model via `row_number() over (partition by id order by ingested_at desc) = 1`,
+      so the latest ingested copy of any given event wins.
+
+      This is the first staging layer on top of `raw__gharchive.ext__events` (a BigQuery external table over Hive-partitioned Parquet in GCS).
+      It flattens the actor / repo / org JSON blobs into typed scalar columns and parses `payload` into a native JSON type.
+
+      The shape of `payload` itself varies by `event_name` (see GitHub Events API spec)
+      and is intentionally left unflattened here — downstream marts pick the fields they need per event type.
+
+      Naming conventions:
+        - `*_id` columns are GitHub's numeric IDs (stable across renames).
+        - `*_name` columns are lowercased canonical handles, safe to join on.
+        - `*_display_name` columns preserve the original casing for display.
+        - `*_object_url` columns are GitHub REST API URLs (api.github.com/...).
+        - `*_image_url` columns are avatar image URLs.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          name: stg_fact__events__created_date_matches_created_at
+          arguments:
+            expression: "created_date = date(created_at)"
+          config:
+            where: "created_date between __batch_start_date__ and __batch_end_date__"
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+          - accepted_values:
+              arguments:
+                values:
+                  - commit_comment_event
+                  - create_event
+                  - delete_event
+                  - discussion_event
+                  - fork_event
+                  - gollum_event
+                  - issue_comment_event
+                  - issues_event
+                  - member_event
+                  - public_event
+                  - pull_request_event
+                  - pull_request_review_event
+                  - pull_request_review_comment_event
+                  - push_event
+                  - release_event
+                  - watch_event
+              config:
+                severity: warn
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: payload
+        description: '{{ doc("payload") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"

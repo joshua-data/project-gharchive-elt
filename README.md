@@ -66,7 +66,7 @@ flowchart LR
 | Path | What's there |
 |---|---|
 | [`ingest/`](ingest/README.md) | Python 3.12 container — downloads the hourly `.json.gz` from gharchive.org, transforms to a stable schema, writes Parquet to GCS. **Start here if you're touching pipeline code.** |
-| [`dbt/`](dbt/README.md) | dbt project (dbt-core / dbt-bigquery `1.11`) — transforms `raw__gharchive.ext__events` into curated tables under `dw`. Profiles point at BigQuery via OAuth (ADC locally, WIF impersonation in CI). **Start here if you're writing transformation SQL.** |
+| [`dbt/`](dbt/README.md) | dbt project (dbt-core / dbt-bigquery `1.11`) — transforms `raw__gharchive.ext__events` into curated tables under `dw`. Models are laid out by layer (`models/01-stg/` …); current state is a single staging fact (`stg_fact__events`) on top of the raw external table. Profiles point at BigQuery via OAuth (ADC locally, WIF impersonation in CI). **Start here if you're writing transformation SQL.** |
 | [`terraform/`](terraform/README.md) | All GCP infrastructure as code — bucket, BigQuery datasets (`raw__gharchive`, `dw`, `dw_dev`), external table, Cloud Run Job, Scheduler, IAM, WIF. **Start here if you're touching infra.** |
 | `.github/workflows/` | CI/CD — `terraform.yml` plans + applies on push to `main`; `ingest-deploy.yml` builds/pushes the image and updates the Cloud Run Job; `dbt-run.yml` runs daily `dbt build` and publishes docs to `joshua-data.github.io`. |
 

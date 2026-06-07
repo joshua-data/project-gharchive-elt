@@ -10,6 +10,7 @@ test-paths: ["tests"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 analysis-paths: ["analyses"]
+docs-paths: ["docs"]
 target-path: "target"
 clean-targets:
   - "target"
@@ -18,6 +19,8 @@ clean-targets:
 
 vars:
   batch_date: ""
+  batch_start_date: ""
+  batch_end_date: ""
 
 models:
   dw:

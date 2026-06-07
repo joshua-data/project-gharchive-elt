@@ -1,0 +1,15 @@
+sources:
+
+  - name: gharchive
+    description: "GitHub Archive Dataset"
+    dataset: raw__gharchive
+    config:
+      meta:
+        owner: joshua
+    
+    tables:
+      - name: events
+        identifier: ext__events
+        description: "GitHub Archive Events Table"
+        config:
+          tags: ["source", "gharchive", "fact"]
