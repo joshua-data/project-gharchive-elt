@@ -216,7 +216,7 @@ After the first apply:
 | `gharchive-ci-deployer` | GitHub Actions (`terraform.yml`, `ingest-deploy.yml`) via WIF | project: `viewer`, `run.developer`, `cloudscheduler.admin`, `artifactregistry.admin`, `iam.serviceAccountAdmin`, `resourcemanager.projectIamAdmin`, `bigquery.jobUser`, `bigquery.dataEditor`. bucket: `storage.admin` on tfstate + raw buckets. dataset: `bigquery.dataOwner` on `raw__gharchive`, `dw`, and `dw_dev`. impersonation: `iam.serviceAccountUser` on `gharchive-runner`. |
 | `gharchive-runner` | Cloud Run Job runtime | bucket: `storage.objectCreator` + `storage.objectViewer` on raw bucket. |
 | `gharchive-invoker` | Cloud Scheduler → Cloud Run Job admin API | project: `run.invoker`. |
-| `gharchive-dbt-runner` | GitHub Actions (`dbt-run.yml`) via WIF | project: `bigquery.jobUser`, `bigquery.readSessionUser`. dataset: `bigquery.dataViewer` on `raw__gharchive`, `bigquery.dataEditor` on `dw` and `dw_dev`. |
+| `gharchive-dbt-runner` | GitHub Actions (`dbt-run.yml`) via WIF | project: `bigquery.jobUser`, `bigquery.readSessionUser`. dataset: `bigquery.dataViewer` on `raw__gharchive`, `bigquery.dataEditor` on `dw` and `dw_dev`. bucket: `storage.objectViewer` on raw bucket (BQ external tables read GCS as the caller). |
 
 **Why the non-obvious choices:**
 
@@ -225,6 +225,7 @@ After the first apply:
 - **Project-level `bigquery.dataEditor` on ci_deployer** — needed for refresh on dataset-level resources whose ACLs cross dataset boundaries; dataset-scoped `dataOwner` alone is not enough for some refresh paths.
 - **`storage.admin` (not `storage.objectAdmin`) on tfstate + raw buckets** — refresh of `google_storage_bucket_iam_member` calls `getIamPolicy`, which isn't in viewer/objectAdmin.
 - **`storage.objectViewer` on runner** — the ingest container calls `blob.exists()` for the `_SUCCESS` idempotency contract; `objectCreator` alone 403s.
+- **`storage.objectViewer` on dbt_runner (raw bucket)** — BigQuery external tables read GCS at query time as the *caller* (not the BQ service agent), so dataset-level `bigquery.dataViewer` is not enough. Querying `raw__gharchive.ext__events` fails with `storage.objects.list` denied until the caller has bucket-scoped read.
 
 ci_deployer is a high-privilege identity (project IAM admin). The blast-radius mitigation is **at the WIF layer**, not the role layer: the OIDC provider only mints tokens for this repo on `refs/heads/main` (see `wif.tf` attribute condition), so a malicious PR — which is necessarily on a non-`main` ref — cannot reach ci_deployer at all. Bootstrap edits that predate the WIF pool itself are still applied locally with owner creds.
 

@@ -133,3 +133,11 @@ resource "google_bigquery_dataset_iam_member" "dbt_runner_bq_dw_dev_dataset_role
   role       = each.value
   member     = "serviceAccount:${google_service_account.dbt_runner.email}"
 }
+
+resource "google_storage_bucket_iam_member" "dbt_runner_gharchive_bucket_roles" {
+  for_each   = toset(local.dbt_runner_gharchive_bucket_roles)
+  bucket     = local.gharchive_bucket_name
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.dbt_runner.email}"
+  depends_on = [google_storage_bucket.gharchive]
+}
