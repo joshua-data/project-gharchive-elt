@@ -20,7 +20,7 @@ select
     latest.repo_name,
     latest.repo_object_url,
     {% if is_incremental() %}
-    coalesce(existing.created_at, latest_created_at) as created_at,
+    coalesce(existing.created_at, latest.created_at) as created_at,
     case
         when existing.repo_id is null then latest.created_at
         when coalesce(existing.repo_name, '')         != coalesce(latest.repo_name, '')
