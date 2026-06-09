@@ -26,7 +26,7 @@ select
         when coalesce(existing.repo_name, '')         != coalesce(latest.repo_name, '')
             or coalesce(existing.repo_object_url, '') != coalesce(latest.repo_object_url, '')
             then latest.created_at
-        else existing.repo_id
+        else existing.updated_at
     end as updated_at,
     {% else %}
     latest.created_at,
