@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: core_fact__commit_comment_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `CommitCommentEvent` — a comment was made on a commit (outside of any PR review).
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#commitcommentevent)
+
+      - Grain: one event = one comment created.
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'commit_comment_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      Distinct from `pull_request_review_comment_event` (which is a comment on a PR diff inside a review).
+      The comment can be attached to a specific line+path of the commit (line-level review) or to the commit as a whole.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: comment_id
+        description: '{{ doc("comment_id") }}'
+      - name: comment_node_id
+        description: '{{ doc("comment_node_id") }}'
+      - name: commit_id
+        description: '{{ doc("commit_id") }}'
+      - name: comment_body
+        description: '{{ doc("comment_body") }}'
+      - name: comment__path
+        description: '{{ doc("comment__path") }}'
+      - name: comment_line
+        description: '{{ doc("comment_line") }}'
+      - name: comment_position
+        description: '{{ doc("comment_position") }}'
+      - name: comment_created_at
+        description: '{{ doc("comment_created_at") }}'
+      - name: comment_updated_at
+        description: '{{ doc("comment_updated_at") }}'
+      - name: comment_object_url
+        description: '{{ doc("comment_object_url") }}'
+      - name: comment_html_url
+        description: '{{ doc("comment_html_url") }}'
+      - name: reactions_total_count
+        description: '{{ doc("reactions__total_count") }}'
+      - name: reactions_plus_one_count
+        description: '{{ doc("reactions__plus_one_count") }}'
+      - name: reactions_minus_one_count
+        description: '{{ doc("reactions__minus_one_count") }}'
+      - name: reactions_laugh_count
+        description: '{{ doc("reactions__laugh_count") }}'
+      - name: reactions_confused_count
+        description: '{{ doc("reactions__confused_count") }}'
+      - name: reactions_heart_count
+        description: '{{ doc("reactions__heart_count") }}'
+      - name: reactions_hooray_count
+        description: '{{ doc("reactions__hooray_count") }}'
+      - name: reactions_rocket_count
+        description: '{{ doc("reactions__rocket_count") }}'
+      - name: reactions_eyes_count
+        description: '{{ doc("reactions__eyes_count") }}'

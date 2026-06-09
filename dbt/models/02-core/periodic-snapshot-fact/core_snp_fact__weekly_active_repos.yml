@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: core_snp_fact__weekly_active_repos
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "periodic-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+    description: |
+      Activated Repos (AU pattern applied at the repo grain) periodic snapshot
+      fact at the weekly grain — one row per `(repo_id, date)` where the repo
+      received at least one event between the Sunday that starts the week
+      (`date`) and the current `batch_date`.
+
+      - Grain: one (repo, calendar week, Sunday-based).
+      - Primary key: (`repo_id`, `date`).
+      - Source: `core_snp_fact__daily_active_repos`, rolled up by week.
+      - Partitioned by: `date` (day-granularity)
+      - Clustered by: `repo_id`
+
+      Week convention is `WEEK(SUNDAY)`. `events_count` is the sum of daily
+      `events_count` over the week so far.
+      `active_days` is the sum of daily `active_days` over the week so far,
+      i.e. the number of distinct days within the week the repo was active
+      (range 1–7).
+
+      Incremental strategy: `insert_overwrite` with dynamic partition discovery.
+      `batch_filter(interval='week(sunday)')` snaps the **lower bound** of the
+      batch window back to the enclosing Sunday so each batch reads from the
+      start of every affected week through `batch_date`. The weekly row is
+      therefore a **week-to-date** snapshot — partial mid-week, full once the
+      week closes. Each batch re-writes the affected week partitions with the
+      latest WTD value, so late-arriving daily events propagate cleanly.
+    columns:
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: date
+        description: '{{ doc("date") }}'
+      - name: events_count
+        description: '{{ doc("events_count") }}'
+      - name: active_days
+        description: '{{ doc("active_days") }}'

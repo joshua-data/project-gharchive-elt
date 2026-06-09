@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: core_snp_fact__monthly_active_repos
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "periodic-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: date
+        data_type: date
+        granularity: month
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+    description: |
+      Activated Repos (AU pattern applied at the repo grain) periodic snapshot
+      fact at the monthly grain — one row per `(repo_id, date)` where the repo
+      received at least one event between the first day of the calendar month
+      (`date`) and the current `batch_date`.
+
+      - Grain: one (repo, calendar month).
+      - Primary key: (`repo_id`, `date`).
+      - Source: `core_snp_fact__daily_active_repos`, rolled up by month.
+      - Partitioned by: `date` (month-granularity).
+      - Clustered by: `repo_id`
+
+      `events_count` is the sum of daily `events_count` over the month so far.
+      `active_days` is the sum of daily `active_days` over the month so far,
+      i.e. the number of distinct days within the month the repo was active
+      (range 1–31, depending on the calendar month).
+
+      Incremental strategy: `insert_overwrite` with dynamic partition discovery.
+      `batch_filter(interval='month')` snaps the **lower bound** of the batch
+      window back to the 1st of the enclosing month so each batch reads from
+      the start of every affected month through `batch_date`. The monthly row
+      is therefore a **month-to-date** snapshot — partial mid-month, full once
+      the month closes. Each batch re-writes the affected month partitions
+      with the latest MTD value, so late-arriving daily events propagate
+      cleanly.
+    columns:
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: date
+        description: '{{ doc("date") }}'
+      - name: events_count
+        description: '{{ doc("events_count") }}'
+      - name: active_days
+        description: '{{ doc("active_days") }}'

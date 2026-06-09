@@ -1,0 +1,157 @@
+version: 2
+
+models:
+  - name: core_fact__pull_request_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `PullRequestEvent` — an action was taken on a pull request.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#pullrequestevent)
+
+      - Grain: one event (one action on one PR).
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'pull_request_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      `action` is the discriminator for the kind of activity. Note that **`merged` is a GH-Archive-normalized action**
+      — the upstream GitHub webhook fires `closed` with `pull_request.merged = true`; GH Archive collapses this into
+      a dedicated `merged` action for analytical convenience.
+
+      `label_*` columns are populated only on `labeled` / `unlabeled` actions; `assignee_*` only on `assigned` / `unassigned`.
+      `pull_request.head` / `pull_request.base` describe the PR's source and target sides — for cross-fork PRs
+      `head_repo_id` differs from the event-level `repo_id` (which always equals the base repo).
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: pull_request_id
+        description: '{{ doc("pr__id") }}'
+      - name: pull_request_number
+        description: '{{ doc("pr__number") }}'
+      - name: pull_request_object_url
+        description: '{{ doc("pr__object_url") }}'
+      - name: pull_request_head_ref
+        description: '{{ doc("pr__head_ref") }}'
+      - name: pull_request_head_sha
+        description: '{{ doc("pr__head_sha") }}'
+      - name: pull_request_head_repo_id
+        description: '{{ doc("pr__head_repo_id") }}'
+      - name: pull_request_head_repo_name
+        description: '{{ doc("pr__head_repo_name") }}'
+      - name: pull_request_head_repo_object_url
+        description: '{{ doc("pr__head_repo_object_url") }}'
+      - name: pull_request_base_ref
+        description: '{{ doc("pr__base_ref") }}'
+      - name: pull_request_base_sha
+        description: '{{ doc("pr__base_sha") }}'
+      - name: pull_request_base_repo_id
+        description: '{{ doc("pr__base_repo_id") }}'
+      - name: pull_request_base_repo_name
+        description: '{{ doc("pr__base_repo_name") }}'
+      - name: pull_request_base_repo_object_url
+        description: '{{ doc("pr__base_repo_object_url") }}'
+      - name: label_id
+        description: '{{ doc("label__id") }}'
+      - name: label_node_id
+        description: '{{ doc("label__node_id") }}'
+      - name: label_name
+        description: '{{ doc("label__name") }}'
+      - name: label_color
+        description: '{{ doc("label__color") }}'
+      - name: label_description
+        description: '{{ doc("label__description") }}'
+      - name: label_default
+        description: '{{ doc("label__default") }}'
+      - name: label_object_url
+        description: '{{ doc("label__object_url") }}'
+      - name: labels
+        description: '{{ doc("labels__array") }}'
+      - name: assignee_id
+        description: '{{ doc("assignee__id") }}'
+      - name: assignee_node_id
+        description: '{{ doc("assignee__node_id") }}'
+      - name: assignee_name
+        description: '{{ doc("assignee__name") }}'
+      - name: assignee_type
+        description: '{{ doc("assignee__type") }}'
+      - name: assignee_user_view_type
+        description: '{{ doc("assignee__user_view_type") }}'
+      - name: assignee_gravatar_id
+        description: '{{ doc("assignee__gravatar_id") }}'
+      - name: assignee_site_admin
+        description: '{{ doc("assignee__site_admin") }}'
+      - name: assignee_avatar_url
+        description: '{{ doc("assignee__avatar_url") }}'
+      - name: assignee_object_url
+        description: '{{ doc("assignee__object_url") }}'
+      - name: assignee_html_url
+        description: '{{ doc("assignee__html_url") }}'
+      - name: assignee_events_url
+        description: '{{ doc("assignee__events_url") }}'
+      - name: assignee_followers_url
+        description: '{{ doc("assignee__followers_url") }}'
+      - name: assignee_following_url
+        description: '{{ doc("assignee__following_url") }}'
+      - name: assignee_gists_url
+        description: '{{ doc("assignee__gists_url") }}'
+      - name: assignee_organizations_url
+        description: '{{ doc("assignee__organizations_url") }}'
+      - name: assignee_received_events_url
+        description: '{{ doc("assignee__received_events_url") }}'
+      - name: assignee_repos_url
+        description: '{{ doc("assignee__repos_url") }}'
+      - name: assignee_starred_url
+        description: '{{ doc("assignee__starred_url") }}'
+      - name: assignee_subscriptions_url
+        description: '{{ doc("assignee__subscriptions_url") }}'

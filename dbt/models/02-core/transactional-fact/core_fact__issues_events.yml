@@ -1,0 +1,292 @@
+version: 2
+
+models:
+  - name: core_fact__issues_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `IssuesEvent` — an action was taken on an issue.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#issuesevent)
+
+      - Grain: one event (one action on one issue).
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'issues_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      The issue snapshot under `issue_*` is captured at event time — `issue_state`, `issue_comments`, `issue_updated_at`
+      etc. reflect state as-of when the event fired.
+      To identify PR-style issues, check whether `issue_pull_request_object_url IS NOT NULL` — GitHub models PRs as
+      a specialization of issues, so PR activity also flows through `IssuesEvent` for actions like `assigned` / `labeled`.
+
+      `label_*` / `labels` columns are populated only on `labeled` / `unlabeled` actions;
+      `assignee_*` columns only on `assigned` / `unassigned`.
+      `changes_*` columns only on `edited`.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: issue_id
+        description: '{{ doc("issue__id") }}'
+      - name: issue_node_id
+        description: '{{ doc("issue__node_id") }}'
+      - name: issue_number
+        description: '{{ doc("issue__number") }}'
+      - name: issue_title
+        description: '{{ doc("issue__title") }}'
+      - name: issue_body
+        description: '{{ doc("issue__body") }}'
+      - name: issue_state
+        description: '{{ doc("issue__state") }}'
+      - name: issue_state_reason
+        description: '{{ doc("issue__state_reason") }}'
+      - name: issue_author_association
+        description: '{{ doc("issue__author_association") }}'
+      - name: issue_active_lock_reason
+        description: '{{ doc("issue__active_lock_reason") }}'
+      - name: issue_locked
+        description: '{{ doc("issue__locked") }}'
+      - name: issue_draft
+        description: '{{ doc("issue__draft") }}'
+      - name: issue_comments
+        description: '{{ doc("issue__comments") }}'
+      - name: issue_labels
+        description: '{{ doc("issue__labels") }}'
+      - name: issue_assignees
+        description: '{{ doc("issue__assignees") }}'
+      - name: issue_created_at
+        description: '{{ doc("issue__created_at") }}'
+      - name: issue_updated_at
+        description: '{{ doc("issue__updated_at") }}'
+      - name: issue_closed_at
+        description: '{{ doc("issue__closed_at") }}'
+      - name: issue_object_url
+        description: '{{ doc("issue__object_url") }}'
+      - name: issue_html_url
+        description: '{{ doc("issue__html_url") }}'
+      - name: issue_repository_url
+        description: '{{ doc("issue__repository_url") }}'
+      - name: issue_labels_url
+        description: '{{ doc("issue__labels_url") }}'
+      - name: issue_comments_url
+        description: '{{ doc("issue__comments_url") }}'
+      - name: issue_events_url
+        description: '{{ doc("issue__events_url") }}'
+      - name: issue_timeline_url
+        description: '{{ doc("issue__timeline_url") }}'
+      - name: issue_user_id
+        description: '{{ doc("issue__user_id") }}'
+      - name: issue_user_node_id
+        description: '{{ doc("issue__user_node_id") }}'
+      - name: issue_user_name
+        description: '{{ doc("issue__user_name") }}'
+      - name: issue_user_type
+        description: '{{ doc("issue__user_type") }}'
+      - name: issue_user_user_view_type
+        description: '{{ doc("issue__user_user_view_type") }}'
+      - name: issue_user_gravatar_id
+        description: '{{ doc("issue__user_gravatar_id") }}'
+      - name: issue_user_site_admin
+        description: '{{ doc("issue__user_site_admin") }}'
+      - name: issue_user_avatar_url
+        description: '{{ doc("issue__user_avatar_url") }}'
+      - name: issue_user_object_url
+        description: '{{ doc("issue__user_object_url") }}'
+      - name: issue_user_html_url
+        description: '{{ doc("issue__user_html_url") }}'
+      - name: issue_user_events_url
+        description: '{{ doc("issue__user_events_url") }}'
+      - name: issue_user_followers_url
+        description: '{{ doc("issue__user_followers_url") }}'
+      - name: issue_user_following_url
+        description: '{{ doc("issue__user_following_url") }}'
+      - name: issue_user_gists_url
+        description: '{{ doc("issue__user_gists_url") }}'
+      - name: issue_user_organizations_url
+        description: '{{ doc("issue__user_organizations_url") }}'
+      - name: issue_user_received_events_url
+        description: '{{ doc("issue__user_received_events_url") }}'
+      - name: issue_user_repos_url
+        description: '{{ doc("issue__user_repos_url") }}'
+      - name: issue_user_starred_url
+        description: '{{ doc("issue__user_starred_url") }}'
+      - name: issue_user_subscriptions_url
+        description: '{{ doc("issue__user_subscriptions_url") }}'
+      - name: issue_assignee_id
+        description: '{{ doc("issue__assignee_id") }}'
+      - name: issue_assignee_node_id
+        description: '{{ doc("issue__assignee_node_id") }}'
+      - name: issue_assignee_name
+        description: '{{ doc("issue__assignee_name") }}'
+      - name: issue_assignee_type
+        description: '{{ doc("issue__assignee_type") }}'
+      - name: issue_assignee_user_view_type
+        description: '{{ doc("issue__assignee_user_view_type") }}'
+      - name: issue_assignee_site_admin
+        description: '{{ doc("issue__assignee_site_admin") }}'
+      - name: issue_assignee_avatar_url
+        description: '{{ doc("issue__assignee_avatar_url") }}'
+      - name: issue_assignee_object_url
+        description: '{{ doc("issue__assignee_object_url") }}'
+      - name: issue_assignee_html_url
+        description: '{{ doc("issue__assignee_html_url") }}'
+      - name: issue_milestone_id
+        description: '{{ doc("issue__milestone_id") }}'
+      - name: issue_milestone_node_id
+        description: '{{ doc("issue__milestone_node_id") }}'
+      - name: issue_milestone_number
+        description: '{{ doc("issue__milestone_number") }}'
+      - name: issue_milestone_title
+        description: '{{ doc("issue__milestone_title") }}'
+      - name: issue_milestone_description
+        description: '{{ doc("issue__milestone_description") }}'
+      - name: issue_milestone_state
+        description: '{{ doc("issue__milestone_state") }}'
+      - name: issue_milestone_open_issues
+        description: '{{ doc("issue__milestone_open_issues") }}'
+      - name: issue_milestone_closed_issues
+        description: '{{ doc("issue__milestone_closed_issues") }}'
+      - name: issue_milestone_due_on
+        description: '{{ doc("issue__milestone_due_on") }}'
+      - name: issue_milestone_created_at
+        description: '{{ doc("issue__milestone_created_at") }}'
+      - name: issue_milestone_updated_at
+        description: '{{ doc("issue__milestone_updated_at") }}'
+      - name: issue_milestone_closed_at
+        description: '{{ doc("issue__milestone_closed_at") }}'
+      - name: issue_milestone_object_url
+        description: '{{ doc("issue__milestone_object_url") }}'
+      - name: issue_milestone_html_url
+        description: '{{ doc("issue__milestone_html_url") }}'
+      - name: issue_milestone_labels_url
+        description: '{{ doc("issue__milestone_labels_url") }}'
+      - name: issue_milestone_creator_id
+        description: '{{ doc("issue__milestone_creator_id") }}'
+      - name: issue_milestone_creator_node_id
+        description: '{{ doc("issue__milestone_creator_node_id") }}'
+      - name: issue_milestone_creator_name
+        description: '{{ doc("issue__milestone_creator_name") }}'
+      - name: issue_milestone_creator_type
+        description: '{{ doc("issue__milestone_creator_type") }}'
+      - name: issue_milestone_creator_site_admin
+        description: '{{ doc("issue__milestone_creator_site_admin") }}'
+      - name: issue_milestone_creator_avatar_url
+        description: '{{ doc("issue__milestone_creator_avatar_url") }}'
+      - name: issue_milestone_creator_object_url
+        description: '{{ doc("issue__milestone_creator_object_url") }}'
+      - name: issue_milestone_creator_html_url
+        description: '{{ doc("issue__milestone_creator_html_url") }}'
+      - name: issue_pull_request_object_url
+        description: '{{ doc("issue__pull_request_object_url") }}'
+      - name: issue_pull_request_html_url
+        description: '{{ doc("issue__pull_request_html_url") }}'
+      - name: issue_pull_request_diff_url
+        description: '{{ doc("issue__pull_request_diff_url") }}'
+      - name: issue_pull_request_patch_url
+        description: '{{ doc("issue__pull_request_patch_url") }}'
+      - name: issue_pull_request_merged_at
+        description: '{{ doc("issue__pull_request_merged_at") }}'
+      - name: issue_reactions_total_count
+        description: '{{ doc("reactions__total_count") }}'
+      - name: issue_reactions_plus_one_count
+        description: '{{ doc("reactions__plus_one_count") }}'
+      - name: issue_reactions_minus_one_count
+        description: '{{ doc("reactions__minus_one_count") }}'
+      - name: issue_reactions_laugh_count
+        description: '{{ doc("reactions__laugh_count") }}'
+      - name: issue_reactions_confused_count
+        description: '{{ doc("reactions__confused_count") }}'
+      - name: issue_reactions_heart_count
+        description: '{{ doc("reactions__heart_count") }}'
+      - name: issue_reactions_hooray_count
+        description: '{{ doc("reactions__hooray_count") }}'
+      - name: issue_reactions_rocket_count
+        description: '{{ doc("reactions__rocket_count") }}'
+      - name: issue_reactions_eyes_count
+        description: '{{ doc("reactions__eyes_count") }}'
+      - name: assignee_id
+        description: '{{ doc("assignee__id") }}'
+      - name: assignee_node_id
+        description: '{{ doc("assignee__node_id") }}'
+      - name: assignee_name
+        description: '{{ doc("assignee__name") }}'
+      - name: assignee_type
+        description: '{{ doc("assignee__type") }}'
+      - name: assignee_user_view_type
+        description: '{{ doc("assignee__user_view_type") }}'
+      - name: assignee_site_admin
+        description: '{{ doc("assignee__site_admin") }}'
+      - name: assignee_avatar_url
+        description: '{{ doc("assignee__avatar_url") }}'
+      - name: assignee_object_url
+        description: '{{ doc("assignee__object_url") }}'
+      - name: assignee_html_url
+        description: '{{ doc("assignee__html_url") }}'
+      - name: label_id
+        description: '{{ doc("label__id") }}'
+      - name: label_node_id
+        description: '{{ doc("label__node_id") }}'
+      - name: label_name
+        description: '{{ doc("label__name") }}'
+      - name: label_description
+        description: '{{ doc("label__description") }}'
+      - name: label_color
+        description: '{{ doc("label__color") }}'
+      - name: label_default
+        description: '{{ doc("label__default") }}'
+      - name: label_object_url
+        description: '{{ doc("label__object_url") }}'
+      - name: changes_title_from
+        description: '{{ doc("changes_title_from") }}'
+      - name: changes_body_from
+        description: '{{ doc("changes_body_from") }}'

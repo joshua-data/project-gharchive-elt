@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: core_scd1__users
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "dim", "scd1"]
+      materialized: incremental
+      incremental_strategy: merge
+      unique_key: user_id
+      on_schema_change: append_new_columns
+      cluster_by:
+        - user_id
+    description: |
+      Conformed user dimension — one row per GitHub user observed in any event we have ingested.
+      (SCD Type 1: only the latest attribute values are kept; no history.)
+
+      - Grain: one user.
+      - Primary key: `user_id`.
+      - Source: `stg_fact__events` (top-level actor columns).
+      - Clustered by: `user_id`
+
+      `created_at` records first sighting and is immutable; `updated_at` advances only when at least one of
+      `user_name`, `user_display_name`, `user_object_url`, `user_image_url` actually changes between batches.
+      Re-observation with identical attributes is a no-op for `updated_at`.
+    columns:
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: created_at
+        description: '{{ doc("created_at__scd1") }}'
+      - name: updated_at
+        description: '{{ doc("updated_at__scd1") }}'
