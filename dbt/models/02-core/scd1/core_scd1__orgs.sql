@@ -24,7 +24,7 @@ select
     {% if is_incremental() %}
     coalesce(existing.created_at, latest.created_at) as created_at,
     case
-        when existing.org_id is null then laetst.created_at
+        when existing.org_id is null then latest.created_at
         when coalesce(existing.org_name, '')         != coalesce(latest.org_name, '')
             or coalesce(existing.org_object_url, '') != coalesce(latest.org_object_url, '')
             or coalesce(existing.org_image_url, '')  != coalesce(latest.org_image_url, '')
