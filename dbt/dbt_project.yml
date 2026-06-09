@@ -25,3 +25,16 @@ vars:
 models:
   dw:
     +materialized: view
+    01-stg:
+      +docs:
+        node_color: "#5DADE2"
+    02-core:
+      transactional-fact:
+        +docs:
+          node_color: "#27AE60"
+      periodic-snapshot-fact:
+        +docs:
+          node_color: "#E67E22"
+      scd1:
+        +docs:
+          node_color: "#8E44AD"

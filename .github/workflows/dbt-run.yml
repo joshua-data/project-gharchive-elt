@@ -2,7 +2,7 @@ name: dbt-run
 
 on:
   schedule:
-    - cron: "0 6 * * *" # daily 06:00 UTC
+    - cron: "17 6 * * *" # daily 06:17 UTC; off-the-hour to avoid GitHub Actions scheduler queue spikes
   push:
     branches: [main]
     paths:
@@ -49,7 +49,9 @@ jobs:
           service_account: ${{ secrets.DBT_RUNNER_SA_EMAIL }}
 
       - name: dbt debug
-        run: dbt debug --target "$DBT_TARGET"
+        run: |
+          set -euxo pipefail
+          dbt debug --target "$DBT_TARGET"
 
       - name: cache dbt packages
         uses: actions/cache@v5
@@ -66,30 +68,42 @@ jobs:
           BATCH_DATE=$(date -u -d "1 day ago" +%Y-%m-%d)
           echo "batch_date=$BATCH_DATE" >> "$GITHUB_OUTPUT"
 
+      - name: dbt source freshness
+        id: source_freshness
+        continue-on-error: true
+        env:
+          BATCH_DATE: ${{ steps.resolve_batch_date.outputs.batch_date }}
+        run: |
+          set -euxo pipefail
+          ARGS=(--vars "{\"batch_date\": \"$BATCH_DATE\"}")
+          dbt source freshness --target "$DBT_TARGET" "${ARGS[@]}"
+
       - name: dbt build
         env:
           BATCH_DATE: ${{ steps.resolve_batch_date.outputs.batch_date }}
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           ARGS=(--vars "{\"batch_date\": \"$BATCH_DATE\"}")
           dbt build --target "$DBT_TARGET" "${ARGS[@]}"
       
       - name: dbt docs generate
+        if: github.event_name == 'push'
         env:
           BATCH_DATE: ${{ steps.resolve_batch_date.outputs.batch_date }}
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           ARGS=(--vars "{\"batch_date\": \"$BATCH_DATE\"}")
           dbt docs generate --target "$DBT_TARGET" "${ARGS[@]}"
-      
+
       - name: checkout docs site
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           repository: joshua-data/joshua-data.github.io
           token: ${{ secrets.DBT_DOCS_DEPLOY_TOKEN }}
           path: docs-site
-      
+
       - name: publish dbt docs
+        if: github.event_name == 'push'
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail

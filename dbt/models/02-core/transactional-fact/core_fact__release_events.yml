@@ -1,0 +1,156 @@
+version: 2
+
+models:
+  - name: core_fact__release_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `ReleaseEvent` — a release was published in a repository.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#releaseevent)
+
+      - Grain: one event (one published release).
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'release_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      Only the `published` action is emitted to the public feed (other release actions like `created` / `edited` / `deleted`
+      exist on the webhooks contract but are filtered out of the public events feed).
+      Binary release assets (e.g. compiled artifacts) are kept as a JSON ARRAY in `release_assets` rather than flattened —
+      release sizes vary from 0 to hundreds of assets, so flattening would distort the per-event grain.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: release_id
+        description: '{{ doc("release_id") }}'
+      - name: release_node_id
+        description: '{{ doc("release_node_id") }}'
+      - name: release_tag_name
+        description: '{{ doc("release_tag_name") }}'
+      - name: release_target_commitish
+        description: '{{ doc("release_target_commitish") }}'
+      - name: release_name
+        description: '{{ doc("release_name") }}'
+      - name: release_body
+        description: '{{ doc("release_body") }}'
+      - name: release_short_description_html
+        description: '{{ doc("release_short_description_html") }}'
+      - name: release_is_short_description_html_truncated
+        description: '{{ doc("release_is_short_description_html_truncated") }}'
+      - name: release_draft
+        description: '{{ doc("release_draft") }}'
+      - name: release_prerelease
+        description: '{{ doc("release_prerelease") }}'
+      - name: release_immutable
+        description: '{{ doc("release_immutable") }}'
+      - name: release_created_at
+        description: '{{ doc("release_created_at") }}'
+      - name: release_updated_at
+        description: '{{ doc("release_updated_at") }}'
+      - name: release_published_at
+        description: '{{ doc("release_published_at") }}'
+      - name: release_object_url
+        description: '{{ doc("release_object_url") }}'
+      - name: release_html_url
+        description: '{{ doc("release_html_url") }}'
+      - name: release_assets_url
+        description: '{{ doc("release_assets_url") }}'
+      - name: release_upload_url
+        description: '{{ doc("release_upload_url") }}'
+      - name: release_tarball_url
+        description: '{{ doc("release_tarball_url") }}'
+      - name: release_zipball_url
+        description: '{{ doc("release_zipball_url") }}'
+      - name: release_discussion_url
+        description: '{{ doc("release_discussion_url") }}'
+      - name: release_author_id
+        description: '{{ doc("release_author_id") }}'
+      - name: release_author_node_id
+        description: '{{ doc("release_author_node_id") }}'
+      - name: release_author_name
+        description: '{{ doc("release_author_name") }}'
+      - name: release_author_type
+        description: '{{ doc("release_author_type") }}'
+      - name: release_author_user_view_type
+        description: '{{ doc("release_author_user_view_type") }}'
+      - name: release_author_gravatar_id
+        description: '{{ doc("release_author_gravatar_id") }}'
+      - name: release_author_site_admin
+        description: '{{ doc("release_author_site_admin") }}'
+      - name: release_author_avatar_url
+        description: '{{ doc("release_author_avatar_url") }}'
+      - name: release_author_object_url
+        description: '{{ doc("release_author_object_url") }}'
+      - name: release_author_html_url
+        description: '{{ doc("release_author_html_url") }}'
+      - name: release_author_events_url
+        description: '{{ doc("release_author_events_url") }}'
+      - name: release_author_followers_url
+        description: '{{ doc("release_author_followers_url") }}'
+      - name: release_author_following_url
+        description: '{{ doc("release_author_following_url") }}'
+      - name: release_author_gists_url
+        description: '{{ doc("release_author_gists_url") }}'
+      - name: release_author_organizations_url
+        description: '{{ doc("release_author_organizations_url") }}'
+      - name: release_author_received_events_url
+        description: '{{ doc("release_author_received_events_url") }}'
+      - name: release_author_repos_url
+        description: '{{ doc("release_author_repos_url") }}'
+      - name: release_author_starred_url
+        description: '{{ doc("release_author_starred_url") }}'
+      - name: release_author_subscriptions_url
+        description: '{{ doc("release_author_subscriptions_url") }}'
+      - name: release_assets
+        description: '{{ doc("release_assets") }}'

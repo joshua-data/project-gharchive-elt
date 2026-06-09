@@ -13,3 +13,8 @@ sources:
         description: "GitHub Archive Events Table"
         config:
           tags: ["source", "gharchive", "fact"]
+          loaded_at_field: ingested_at
+          freshness:
+            warn_after: { count: 2, period: hour }
+            error_after: { count: 6, period: hour }
+            filter: "dt >= current_date - 2"

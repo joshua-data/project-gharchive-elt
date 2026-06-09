@@ -1,0 +1,236 @@
+version: 2
+
+models:
+  - name: core_fact__discussion_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `DiscussionEvent` — a GitHub Discussions thread was created (or otherwise acted upon).
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#discussionevent)
+
+      - Grain: one event.
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'discussion_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      Low volume in the public feed (hundreds per day vs. millions for `push_event`).
+      The `created` action dominates; the upstream webhook supports other actions (`edited`, `deleted`,
+      `pinned`, `unpinned`, `locked`, `unlocked`, `transferred`, `category_changed`, `answered`, `unanswered`,
+      `labeled`, `unlabeled`) but they're rare in the public stream.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: discussion_id
+        description: '{{ doc("discussion_id") }}'
+      - name: discussion_node_id
+        description: '{{ doc("discussion_node_id") }}'
+      - name: discussion_number
+        description: '{{ doc("discussion_number") }}'
+      - name: discussion_title
+        description: '{{ doc("discussion_title") }}'
+      - name: discussion_body
+        description: '{{ doc("discussion_body") }}'
+      - name: discussion_state
+        description: '{{ doc("discussion_state") }}'
+      - name: discussion_state_reason
+        description: '{{ doc("discussion_state_reason") }}'
+      - name: discussion_author_association
+        description: '{{ doc("discussion_author_association") }}'
+      - name: discussion_active_lock_reason
+        description: '{{ doc("discussion_active_lock_reason") }}'
+      - name: discussion_locked
+        description: '{{ doc("discussion_locked") }}'
+      - name: discussion_comments
+        description: '{{ doc("discussion_comments") }}'
+      - name: discussion_labels
+        description: '{{ doc("discussion_labels") }}'
+      - name: discussion_created_at
+        description: '{{ doc("discussion_created_at") }}'
+      - name: discussion_updated_at
+        description: '{{ doc("discussion_updated_at") }}'
+      - name: discussion_answer_chosen_at
+        description: '{{ doc("discussion_answer_chosen_at") }}'
+      - name: discussion_answer_html_url
+        description: '{{ doc("discussion_answer_html_url") }}'
+      - name: discussion_html_url
+        description: '{{ doc("discussion_html_url") }}'
+      - name: discussion_repository_url
+        description: '{{ doc("discussion_repository_url") }}'
+      - name: discussion_timeline_url
+        description: '{{ doc("discussion_timeline_url") }}'
+      - name: discussion_user_id
+        description: '{{ doc("discussion_user_id") }}'
+      - name: discussion_user_node_id
+        description: '{{ doc("discussion_user_node_id") }}'
+      - name: discussion_user_name
+        description: '{{ doc("discussion_user_name") }}'
+      - name: discussion_user_type
+        description: '{{ doc("discussion_user_type") }}'
+      - name: discussion_user_user_view_type
+        description: '{{ doc("discussion_user_user_view_type") }}'
+      - name: discussion_user_gravatar_id
+        description: '{{ doc("discussion_user_gravatar_id") }}'
+      - name: discussion_user_site_admin
+        description: '{{ doc("discussion_user_site_admin") }}'
+      - name: discussion_user_avatar_url
+        description: '{{ doc("discussion_user_avatar_url") }}'
+      - name: discussion_user_object_url
+        description: '{{ doc("discussion_user_object_url") }}'
+      - name: discussion_user_html_url
+        description: '{{ doc("discussion_user_html_url") }}'
+      - name: discussion_user_events_url
+        description: '{{ doc("discussion_user_events_url") }}'
+      - name: discussion_user_followers_url
+        description: '{{ doc("discussion_user_followers_url") }}'
+      - name: discussion_user_following_url
+        description: '{{ doc("discussion_user_following_url") }}'
+      - name: discussion_user_gists_url
+        description: '{{ doc("discussion_user_gists_url") }}'
+      - name: discussion_user_organizations_url
+        description: '{{ doc("discussion_user_organizations_url") }}'
+      - name: discussion_user_received_events_url
+        description: '{{ doc("discussion_user_received_events_url") }}'
+      - name: discussion_user_repos_url
+        description: '{{ doc("discussion_user_repos_url") }}'
+      - name: discussion_user_starred_url
+        description: '{{ doc("discussion_user_starred_url") }}'
+      - name: discussion_user_subscriptions_url
+        description: '{{ doc("discussion_user_subscriptions_url") }}'
+      - name: discussion_category_id
+        description: '{{ doc("discussion_category_id") }}'
+      - name: discussion_category_node_id
+        description: '{{ doc("discussion_category_node_id") }}'
+      - name: discussion_category_name
+        description: '{{ doc("discussion_category_name") }}'
+      - name: discussion_category_emoji
+        description: '{{ doc("discussion_category_emoji") }}'
+      - name: discussion_category_description
+        description: '{{ doc("discussion_category_description") }}'
+      - name: discussion_category_slug
+        description: '{{ doc("discussion_category_slug") }}'
+      - name: discussion_category_is_answerable
+        description: '{{ doc("discussion_category_is_answerable") }}'
+      - name: discussion_category_repository_id
+        description: '{{ doc("discussion_category_repository_id") }}'
+      - name: discussion_category_created_at
+        description: '{{ doc("discussion_category_created_at") }}'
+      - name: discussion_category_updated_at
+        description: '{{ doc("discussion_category_updated_at") }}'
+      - name: discussion_answer_chosen_by_id
+        description: '{{ doc("discussion_answer_chosen_by_id") }}'
+      - name: discussion_answer_chosen_by_node_id
+        description: '{{ doc("discussion_answer_chosen_by_node_id") }}'
+      - name: discussion_answer_chosen_by_name
+        description: '{{ doc("discussion_answer_chosen_by_name") }}'
+      - name: discussion_answer_chosen_by_type
+        description: '{{ doc("discussion_answer_chosen_by_type") }}'
+      - name: discussion_answer_chosen_by_user_view_type
+        description: '{{ doc("discussion_answer_chosen_by_user_view_type") }}'
+      - name: discussion_answer_chosen_by_gravatar_id
+        description: '{{ doc("discussion_answer_chosen_by_gravatar_id") }}'
+      - name: discussion_answer_chosen_by_site_admin
+        description: '{{ doc("discussion_answer_chosen_by_site_admin") }}'
+      - name: discussion_answer_chosen_by_avatar_url
+        description: '{{ doc("discussion_answer_chosen_by_avatar_url") }}'
+      - name: discussion_answer_chosen_by_object_url
+        description: '{{ doc("discussion_answer_chosen_by_object_url") }}'
+      - name: discussion_answer_chosen_by_html_url
+        description: '{{ doc("discussion_answer_chosen_by_html_url") }}'
+      - name: discussion_answer_chosen_by_events_url
+        description: '{{ doc("discussion_answer_chosen_by_events_url") }}'
+      - name: discussion_answer_chosen_by_followers_url
+        description: '{{ doc("discussion_answer_chosen_by_followers_url") }}'
+      - name: discussion_answer_chosen_by_following_url
+        description: '{{ doc("discussion_answer_chosen_by_following_url") }}'
+      - name: discussion_answer_chosen_by_gists_url
+        description: '{{ doc("discussion_answer_chosen_by_gists_url") }}'
+      - name: discussion_answer_chosen_by_organizations_url
+        description: '{{ doc("discussion_answer_chosen_by_organizations_url") }}'
+      - name: discussion_answer_chosen_by_received_events_url
+        description: '{{ doc("discussion_answer_chosen_by_received_events_url") }}'
+      - name: discussion_answer_chosen_by_repos_url
+        description: '{{ doc("discussion_answer_chosen_by_repos_url") }}'
+      - name: discussion_answer_chosen_by_starred_url
+        description: '{{ doc("discussion_answer_chosen_by_starred_url") }}'
+      - name: discussion_answer_chosen_by_subscriptions_url
+        description: '{{ doc("discussion_answer_chosen_by_subscriptions_url") }}'
+      - name: discussion_reactions_total_count
+        description: '{{ doc("reactions__total_count") }}'
+      - name: discussion_reactions_plus_one_count
+        description: '{{ doc("reactions__plus_one_count") }}'
+      - name: discussion_reactions_minus_one_count
+        description: '{{ doc("reactions__minus_one_count") }}'
+      - name: discussion_reactions_laugh_count
+        description: '{{ doc("reactions__laugh_count") }}'
+      - name: discussion_reactions_confused_count
+        description: '{{ doc("reactions__confused_count") }}'
+      - name: discussion_reactions_heart_count
+        description: '{{ doc("reactions__heart_count") }}'
+      - name: discussion_reactions_hooray_count
+        description: '{{ doc("reactions__hooray_count") }}'
+      - name: discussion_reactions_rocket_count
+        description: '{{ doc("reactions__rocket_count") }}'
+      - name: discussion_reactions_eyes_count
+        description: '{{ doc("reactions__eyes_count") }}'
+      - name: discussion_reactions_object_url
+        description: '{{ doc("discussion_reactions_object_url") }}'
+      - name: changes_title_from
+        description: '{{ doc("changes_title_from") }}'
+      - name: changes_body_from
+        description: '{{ doc("changes_body_from") }}'
+      - name: changes_category_from_name
+        description: '{{ doc("changes_category_from_name") }}'
+      - name: changes_category_from_slug
+        description: '{{ doc("changes_category_from_slug") }}'

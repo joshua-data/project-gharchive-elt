@@ -1,0 +1,115 @@
+version: 2
+
+models:
+  - name: core_fact__member_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `MemberEvent` — a collaborator was added (or had their permission level changed) on a repository.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#memberevent)
+
+      - Grain: one event.
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'member_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      `user_*` columns describe the **actor** (the user/admin who performed the change); `member_*` columns
+      describe the **target collaborator** (the account being added or modified). `changes_permission_from` / `_to`
+      are only populated on the `edited` action — typically null on `added`.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: member_id
+        description: '{{ doc("member_id") }}'
+      - name: member_node_id
+        description: '{{ doc("member_node_id") }}'
+      - name: member_name
+        description: '{{ doc("member_name") }}'
+      - name: member_type
+        description: '{{ doc("member_type") }}'
+      - name: member_user_view_type
+        description: '{{ doc("member_user_view_type") }}'
+      - name: member_gravatar_id
+        description: '{{ doc("member_gravatar_id") }}'
+      - name: member_site_admin
+        description: '{{ doc("member_site_admin") }}'
+      - name: member_avatar_url
+        description: '{{ doc("member_avatar_url") }}'
+      - name: member_object_url
+        description: '{{ doc("member_object_url") }}'
+      - name: member_html_url
+        description: '{{ doc("member_html_url") }}'
+      - name: member_events_url
+        description: '{{ doc("member_events_url") }}'
+      - name: member_followers_url
+        description: '{{ doc("member_followers_url") }}'
+      - name: member_following_url
+        description: '{{ doc("member_following_url") }}'
+      - name: member_gists_url
+        description: '{{ doc("member_gists_url") }}'
+      - name: member_organizations_url
+        description: '{{ doc("member_organizations_url") }}'
+      - name: member_received_events_url
+        description: '{{ doc("member_received_events_url") }}'
+      - name: member_repos_url
+        description: '{{ doc("member_repos_url") }}'
+      - name: member_starred_url
+        description: '{{ doc("member_starred_url") }}'
+      - name: member_subscriptions_url
+        description: '{{ doc("member_subscriptions_url") }}'
+      - name: changes_permission_from
+        description: '{{ doc("changes_permission_from") }}'
+      - name: changes_permission_to
+        description: '{{ doc("changes_permission_to") }}'

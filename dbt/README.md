@@ -1,65 +1,31 @@
 # dbt
 
-**What this is:** the dbt project that transforms `raw__gharchive.ext__events` into curated tables under the `dw` BigQuery dataset. Lives inside the monorepo so infra (Terraform), ingest, and transformation evolve together.
+**What this is:** the dbt project that transforms the raw GitHub Archive event stream into curated facts and dimensions under the `dw` BigQuery dataset. Lives inside the monorepo so infra (Terraform), ingest, and transformation evolve together.
 
 **How it runs:**
-- **Daily batch** — GitHub Actions workflow [`dbt-run.yml`](../.github/workflows/dbt-run.yml) fires at `0 6 * * *` UTC. It impersonates the `gharchive-dbt-runner` service account via Workload Identity Federation (no keys), runs `dbt build --target prod`, regenerates docs, and pushes them to the [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io) repo under `project-gharchive-elt/dbt-docs/`.
+- **Daily batch** — GitHub Actions workflow [`dbt-run.yml`](../.github/workflows/dbt-run.yml) fires at `17 6 * * *` UTC. It impersonates the `gharchive-dbt-runner` service account via Workload Identity Federation (no keys) and runs `dbt build --target prod`. On every push to `main` that touches `dbt/**`, the workflow additionally regenerates docs and pushes them to the [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io) repo under `project-gharchive-elt/dbt-docs/`.
 - **Local development & backfill** — you run as yourself via `gcloud auth application-default login`. No service account keys, no impersonation.
 
-**Where docs live:** <https://joshua-data.github.io/project-gharchive-elt/dbt-docs/> (updated on every successful prod run).
+**Where docs live:** <https://joshua-data.github.io/project-gharchive-elt/dbt-docs/> (refreshed on every push to `main` that touches `dbt/**`).
 
 > ↩ Back to [project overview](../README.md). For raw layer infra → [`../terraform/README.md`](../terraform/README.md). For raw layer pipeline → [`../ingest/README.md`](../ingest/README.md).
 
-## Layout
-
-```
-dbt/
-├── dbt_project.yml          # project config, default materialization, batch vars
-├── profiles.yml             # OAuth (ADC) — no secrets, committed
-├── packages.yml             # dbt_utils
-├── requirements.txt         # dbt-core 1.11, dbt-bigquery 1.11
-├── models/
-│   ├── sources.yml          # raw__gharchive.ext__events declared as source
-│   └── 01-stg/              # staging layer (numbered prefix = build order)
-│       └── stg_fact__events.{sql,yml}
-├── macros/
-│   ├── batch_filter.{sql,yml}        # batch-window predicate macro (see below)
-│   └── get_where_subquery.{sql,yml}  # override of dbt's built-in — resolves __batch_*_date__ placeholders in test `where` configs
-├── docs/
-│   └── columns.md           # shared `{% docs %}` blocks reused across model YAMLs
-├── seeds/ snapshots/ tests/ analyses/
-└── target/  dbt_packages/  logs/   ← gitignored
-```
-
-`DBT_PROFILES_DIR=.` (set automatically when you run from this directory) makes dbt read the in-repo `profiles.yml` instead of `~/.dbt/profiles.yml`. We keep all dbt state self-contained under `/dbt`.
-
 ## Conventions
 
-- **Raw source:** `raw__gharchive.ext__events`, declared in [`models/sources.yml`](models/sources.yml) under the `gharchive` source. Reference via `{{ source('gharchive', 'events') }}`.
+- **Raw source:** the `gharchive` source declared in [`models/sources.yml`](models/sources.yml). Reference via `{{ source('gharchive', 'events') }}` — don't hard-code the underlying dataset / table name.
 - **Curated dataset:** `dw` (Terraform-provisioned, `asia-northeast3`).
 - **Local dev dataset:** `dw_dev` (Terraform-provisioned alongside `dw` — see [`../terraform/bigquery.tf`](../terraform/bigquery.tf); override with `DBT_DEV_DATASET`).
 - **Location:** all datasets are in `asia-northeast3`. dbt-bigquery uses the `location` from `profiles.yml`.
-- **Model layout:** `models/` is organized into numbered sub-folders (`01-stg/`, `02-…/`, …) so the layer order is obvious at a glance. Default materialization is `view`; layers that need it (e.g. staging) override per-model in YAML.
-- **Column docs:** shared `{% docs %}` blocks live in [`docs/columns.md`](docs/columns.md) and are referenced from model YAMLs as `'{{ doc("column_name") }}'`. `docs-paths: ["docs"]` in `dbt_project.yml` is what wires this up.
+- **Profiles:** `DBT_PROFILES_DIR=.` (run from this directory) makes dbt read the in-repo `profiles.yml` instead of `~/.dbt/profiles.yml`. All dbt state is self-contained under `/dbt`.
+- **Model layout:** `models/` is organized into numbered sub-folders (`01-stg/`, `02-core/`, …) so the build order is obvious at a glance. Default materialization is `view`; layers that need it override per-model in YAML.
+- **Column docs:** shared `{% docs %}` blocks live under [`docs/`](docs/) and are referenced from model YAMLs as `'{{ doc("column_name") }}'`. `docs-paths: ["docs"]` in `dbt_project.yml` wires this up.
+- **Column naming:** consistent suffixes across dimensions — `*_id` = GitHub's numeric ID (durable join key), `*_name` = lowercased canonical handle (case-insensitive join key), `*_display_name` = case-preserved display form, `*_object_url` = REST API URL, `*_image_url` = avatar URL.
 - **Variables (batch window):** three vars define the active batch window. Resolution precedence (empty string = not-set):
     1. `batch_start_date` + `batch_end_date` (both required together) → closed date range. Primarily for local range backfills.
-    2. `batch_date` → 1-day lookback window, `between (batch_date - 1 day) and batch_date`. This is what CI passes (yesterday UTC at `0 6 * * *`); the lookback covers partitions that the ingest layer landed late via its `CATCHUP_HOURS` retry window.
+    2. `batch_date` → 1-day lookback window, `between (batch_date - 1 day) and batch_date`. This is what CI passes (yesterday UTC); the lookback covers partitions that the ingest layer landed late via its `CATCHUP_HOURS` retry window.
     3. none set → compile error. There is no implicit default — we'd rather fail loud than silently scan everything against `require_partition_filter: true` tables.
 
   Don't read these vars directly in models — use the batch-window macros below, which centralize the precedence and validation.
-
-## Models
-
-| Layer | Folder | Models |
-|---|---|---|
-| Staging | `models/01-stg/` | `stg_fact__events` |
-
-**`stg_fact__events`** — one row per public GitHub event from `raw__gharchive.ext__events`. Flattens the `actor` / `repo` / `org` JSON blobs into typed scalar columns, parses `payload` into a native `JSON` value (intentionally left unflattened — its shape varies by `event_name`), and dedupes across re-ingests with `row_number() over (partition by id order by ingested_at desc) = 1`.
-
-- Materialization: `incremental` (`insert_overwrite`), partitioned by `created_date` (day), clustered by `(event_name, repo_id)`, `require_partition_filter: true`.
-- Batch window comes from the `batch_filter` macro — see below.
-
-Column naming follows a small set of suffixes that hold across all dimensions: `*_id` = GitHub's numeric ID (durable join key), `*_name` = lowercased canonical handle (case-insensitive join key), `*_display_name` = case-preserved display form, `*_object_url` = REST API URL, `*_image_url` = avatar URL.
 
 ## Local setup
 
@@ -113,10 +79,10 @@ Two macros centralize the batch window, one for **models** and one for **tests**
 
 ### `batch_filter` — predicate for model SQL
 
-`macros/batch_filter.sql` emits a BETWEEN predicate over a date column.
+Emits a BETWEEN predicate over a date column.
 
 ```sql
-{{ batch_filter(date_col='dt', start_date=none, end_date=none) }}
+{{ batch_filter(date_col='dt', start_date=none, end_date=none, interval='day') }}
 ```
 
 If both `start_date` and `end_date` are passed, they're used as-is (pure mode — no var lookup). Otherwise the window is inherited from dbt vars, in precedence:
@@ -125,34 +91,23 @@ If both `start_date` and `end_date` are passed, they're used as-is (pure mode �
 2. `batch_date` set → `between (batch_date - 1 day) and batch_date` (1-day lookback; mirrors the ingest layer's catchup window so partitions that landed late are re-materialized)
 3. none set → raises a compile error (prevents accidental full scans against `require_partition_filter: true` tables)
 
+`interval` snaps the lower bound back to the start of the enclosing period — passed straight through to BigQuery `DATE_TRUNC`, so any unit `DATE_TRUNC` accepts works (`day` is the default no-op; `week`, `week(<weekday>)`, `month`, `quarter`, `year` all valid). The upper bound is left as-is — this widens the scan to a period-to-date (WTD / MTD / QTD) window without pulling in future dates that haven't materialized yet.
+
 Usage:
 
 ```sql
--- default: inherit from vars
+-- default: inherit from vars, day-grain (no snap)
 where {{ batch_filter('dt') }}
 
 -- explicit: pure function, ignores vars
 where {{ batch_filter('dt', '2026-05-01', '2026-05-07') }}
+
+-- weekly snapshot: snap lower bound back to enclosing Sunday week start
+where {{ batch_filter('date', interval='week(sunday)') }}
+
+-- monthly snapshot: snap lower bound back to the 1st of the enclosing month
+where {{ batch_filter('date', interval='month') }}
 ```
-
-Build anything more involved (rolling windows, calendar joins, lookback, etc.) on top of this directly in the model SQL — usually by resolving the dates once at the top of the model and passing them to `batch_filter` explicitly.
-
-### `get_where_subquery` — placeholder rewriting for test `where` configs
-
-`macros/get_where_subquery.sql` overrides dbt's built-in macro of the same name. Its job is to scope **tests** (uniqueness, not-null, expression checks, etc.) to the same batch window the model just materialized — without having to embed `{% raw %}{{ var('...') }}{% endraw %}` inside test YAML.
-
-Write tests using the literal placeholders `__batch_start_date__` / `__batch_end_date__`:
-
-```yaml
-data_tests:
-  - not_null:
-      config:
-        where: "created_date between __batch_start_date__ and __batch_end_date__"
-```
-
-At compile time the override calls the `replace_batch_dates` helper, which substitutes the placeholders with `date 'YYYY-MM-DD'` literals resolved from the same `batch_start_date` / `batch_end_date` / `batch_date` vars. Unlike `batch_filter`, the helper does **not** apply a 1-day lookback to `batch_date`; the lookback already lives in the model's `batch_filter` call, so re-applying it here would widen the test window past the partitions that were actually rewritten. Missing vars raise a compile error rather than leaking a literal `__batch_start_date__` token into the SQL.
-
-If a `where` config doesn't contain either placeholder, the override falls back to dbt's built-in behavior (the string is passed through verbatim).
 
 ## Backfill
 
@@ -160,7 +115,6 @@ For a single date:
 
 ```bash
 DBT_PROFILES_DIR=. dbt build --target dev \
-  --select tag:daily \
   --vars '{batch_date: "2026-05-01"}'
 ```
 
@@ -168,7 +122,6 @@ For a date range, set both range vars (single `dbt build`, single union window):
 
 ```bash
 DBT_PROFILES_DIR=. dbt build --target dev \
-  --select tag:daily \
   --vars '{batch_start_date: "2026-05-01", batch_end_date: "2026-05-07"}'
 ```
 
@@ -178,7 +131,6 @@ Or, for incremental models that need per-day materialization, loop in a shell:
 for d in $(seq 0 6); do
   RD=$(date -u -v-${d}d +%Y-%m-%d)   # macOS; on Linux: date -u -d "$d days ago" +%F
   DBT_PROFILES_DIR=. dbt build --target dev \
-    --select tag:daily \
     --vars "{batch_date: '$RD'}"
 done
 ```
@@ -189,8 +141,8 @@ Prod backfills via CI are not directly supported — `dbt-run.yml` is triggered 
 
 | When | Workflow | What it does |
 |---|---|---|
-| `0 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` → `dbt docs generate` → push docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/` |
-| `push` → `main` on `dbt/**` (excluding `dbt/README.md`) or the workflow file | `.github/workflows/dbt-run.yml` (`push`) | Same steps as the scheduled run, with `batch_date` again resolved to yesterday UTC. Every merge that touches `dbt/` therefore re-runs prod once. |
+| `17 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → `dbt source freshness` (warn-only, won't block) → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` |
+| `push` → `main` on `dbt/**` (excluding `dbt/README.md`) or the workflow file | `.github/workflows/dbt-run.yml` (`push`) | Same build steps as the scheduled run, plus `dbt docs generate` + publish docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`. Every merge that touches `dbt/` therefore re-runs prod once and refreshes docs. |
 | Manual | *(not configured)* | `workflow_dispatch` is not wired up — add it temporarily for historical backfills |
 | PR | *(none — by design)* | dbt CI is not run on PRs; the WIF attribute condition refuses non-`main` refs |
 

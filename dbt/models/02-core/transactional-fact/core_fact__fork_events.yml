@@ -1,0 +1,280 @@
+version: 2
+
+models:
+  - name: core_fact__fork_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `ForkEvent` — a repository was forked.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#forkevent)
+
+      - Grain: one event (one fork).
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'fork_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      `repo_*` (event-level) refers to the **source repository** that was forked.
+      `forkee_*` columns describe the **newly created fork** repo. All `forkee_*` numeric counts
+      (stargazers, watchers, forks, open_issues, size) are snapshots at fork time and will be
+      `0` for typical brand-new forks.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: forkee_id
+        description: '{{ doc("forkee_id") }}'
+      - name: forkee_node_id
+        description: '{{ doc("forkee_node_id") }}'
+      - name: forkee_name
+        description: '{{ doc("forkee_name") }}'
+      - name: forkee_full_name
+        description: '{{ doc("forkee_full_name") }}'
+      - name: forkee_visibility
+        description: '{{ doc("forkee_visibility") }}'
+      - name: forkee_description
+        description: '{{ doc("forkee_description") }}'
+      - name: forkee_homepage
+        description: '{{ doc("forkee_homepage") }}'
+      - name: forkee_language
+        description: '{{ doc("forkee_language") }}'
+      - name: forkee_default_branch
+        description: '{{ doc("forkee_default_branch") }}'
+      - name: forkee_private
+        description: '{{ doc("forkee_private") }}'
+      - name: forkee_fork
+        description: '{{ doc("forkee_fork") }}'
+      - name: forkee_archived
+        description: '{{ doc("forkee_archived") }}'
+      - name: forkee_disabled
+        description: '{{ doc("forkee_disabled") }}'
+      - name: forkee_is_template
+        description: '{{ doc("forkee_is_template") }}'
+      - name: forkee_allow_forking
+        description: '{{ doc("forkee_allow_forking") }}'
+      - name: forkee_web_commit_signoff_required
+        description: '{{ doc("forkee_web_commit_signoff_required") }}'
+      - name: forkee_has_issues
+        description: '{{ doc("forkee_has_issues") }}'
+      - name: forkee_has_projects
+        description: '{{ doc("forkee_has_projects") }}'
+      - name: forkee_has_wiki
+        description: '{{ doc("forkee_has_wiki") }}'
+      - name: forkee_has_pages
+        description: '{{ doc("forkee_has_pages") }}'
+      - name: forkee_has_downloads
+        description: '{{ doc("forkee_has_downloads") }}'
+      - name: forkee_has_discussions
+        description: '{{ doc("forkee_has_discussions") }}'
+      - name: forkee_has_pull_requests
+        description: '{{ doc("forkee_has_pull_requests") }}'
+      - name: forkee_pull_request_creation_policy
+        description: '{{ doc("forkee_pull_request_creation_policy") }}'
+      - name: forkee_size
+        description: '{{ doc("forkee_size") }}'
+      - name: forkee_stargazers_count
+        description: '{{ doc("forkee_stargazers_count") }}'
+      - name: forkee_watchers_count
+        description: '{{ doc("forkee_watchers_count") }}'
+      - name: forkee_watchers
+        description: '{{ doc("forkee_watchers") }}'
+      - name: forkee_forks_count
+        description: '{{ doc("forkee_forks_count") }}'
+      - name: forkee_forks
+        description: '{{ doc("forkee_forks") }}'
+      - name: forkee_open_issues_count
+        description: '{{ doc("forkee_open_issues_count") }}'
+      - name: forkee_open_issues
+        description: '{{ doc("forkee_open_issues") }}'
+      - name: forkee_topics
+        description: '{{ doc("forkee_topics") }}'
+      - name: forkee_created_at
+        description: '{{ doc("forkee_created_at") }}'
+      - name: forkee_updated_at
+        description: '{{ doc("forkee_updated_at") }}'
+      - name: forkee_pushed_at
+        description: '{{ doc("forkee_pushed_at") }}'
+      - name: forkee_object_url
+        description: '{{ doc("forkee_object_url") }}'
+      - name: forkee_html_url
+        description: '{{ doc("forkee_html_url") }}'
+      - name: forkee_git_url
+        description: '{{ doc("forkee_git_url") }}'
+      - name: forkee_ssh_url
+        description: '{{ doc("forkee_ssh_url") }}'
+      - name: forkee_clone_url
+        description: '{{ doc("forkee_clone_url") }}'
+      - name: forkee_svn_url
+        description: '{{ doc("forkee_svn_url") }}'
+      - name: forkee_mirror_url
+        description: '{{ doc("forkee_mirror_url") }}'
+      - name: forkee_archive_url
+        description: '{{ doc("forkee_archive_url") }}'
+      - name: forkee_assignees_url
+        description: '{{ doc("forkee_assignees_url") }}'
+      - name: forkee_blobs_url
+        description: '{{ doc("forkee_blobs_url") }}'
+      - name: forkee_branches_url
+        description: '{{ doc("forkee_branches_url") }}'
+      - name: forkee_collaborators_url
+        description: '{{ doc("forkee_collaborators_url") }}'
+      - name: forkee_comments_url
+        description: '{{ doc("forkee_comments_url") }}'
+      - name: forkee_commits_url
+        description: '{{ doc("forkee_commits_url") }}'
+      - name: forkee_compare_url
+        description: '{{ doc("forkee_compare_url") }}'
+      - name: forkee_contents_url
+        description: '{{ doc("forkee_contents_url") }}'
+      - name: forkee_contributors_url
+        description: '{{ doc("forkee_contributors_url") }}'
+      - name: forkee_deployments_url
+        description: '{{ doc("forkee_deployments_url") }}'
+      - name: forkee_downloads_url
+        description: '{{ doc("forkee_downloads_url") }}'
+      - name: forkee_events_url
+        description: '{{ doc("forkee_events_url") }}'
+      - name: forkee_forks_url
+        description: '{{ doc("forkee_forks_url") }}'
+      - name: forkee_git_commits_url
+        description: '{{ doc("forkee_git_commits_url") }}'
+      - name: forkee_git_refs_url
+        description: '{{ doc("forkee_git_refs_url") }}'
+      - name: forkee_git_tags_url
+        description: '{{ doc("forkee_git_tags_url") }}'
+      - name: forkee_hooks_url
+        description: '{{ doc("forkee_hooks_url") }}'
+      - name: forkee_issue_comment_url
+        description: '{{ doc("forkee_issue_comment_url") }}'
+      - name: forkee_issue_events_url
+        description: '{{ doc("forkee_issue_events_url") }}'
+      - name: forkee_issues_url
+        description: '{{ doc("forkee_issues_url") }}'
+      - name: forkee_keys_url
+        description: '{{ doc("forkee_keys_url") }}'
+      - name: forkee_labels_url
+        description: '{{ doc("forkee_labels_url") }}'
+      - name: forkee_languages_url
+        description: '{{ doc("forkee_languages_url") }}'
+      - name: forkee_merges_url
+        description: '{{ doc("forkee_merges_url") }}'
+      - name: forkee_milestones_url
+        description: '{{ doc("forkee_milestones_url") }}'
+      - name: forkee_notifications_url
+        description: '{{ doc("forkee_notifications_url") }}'
+      - name: forkee_pulls_url
+        description: '{{ doc("forkee_pulls_url") }}'
+      - name: forkee_releases_url
+        description: '{{ doc("forkee_releases_url") }}'
+      - name: forkee_stargazers_url
+        description: '{{ doc("forkee_stargazers_url") }}'
+      - name: forkee_statuses_url
+        description: '{{ doc("forkee_statuses_url") }}'
+      - name: forkee_subscribers_url
+        description: '{{ doc("forkee_subscribers_url") }}'
+      - name: forkee_subscription_url
+        description: '{{ doc("forkee_subscription_url") }}'
+      - name: forkee_tags_url
+        description: '{{ doc("forkee_tags_url") }}'
+      - name: forkee_teams_url
+        description: '{{ doc("forkee_teams_url") }}'
+      - name: forkee_trees_url
+        description: '{{ doc("forkee_trees_url") }}'
+      - name: forkee_owner_id
+        description: '{{ doc("forkee_owner_id") }}'
+      - name: forkee_owner_node_id
+        description: '{{ doc("forkee_owner_node_id") }}'
+      - name: forkee_owner_name
+        description: '{{ doc("forkee_owner_name") }}'
+      - name: forkee_owner_type
+        description: '{{ doc("forkee_owner_type") }}'
+      - name: forkee_owner_user_view_type
+        description: '{{ doc("forkee_owner_user_view_type") }}'
+      - name: forkee_owner_gravatar_id
+        description: '{{ doc("forkee_owner_gravatar_id") }}'
+      - name: forkee_owner_site_admin
+        description: '{{ doc("forkee_owner_site_admin") }}'
+      - name: forkee_owner_avatar_url
+        description: '{{ doc("forkee_owner_avatar_url") }}'
+      - name: forkee_owner_object_url
+        description: '{{ doc("forkee_owner_object_url") }}'
+      - name: forkee_owner_html_url
+        description: '{{ doc("forkee_owner_html_url") }}'
+      - name: forkee_owner_events_url
+        description: '{{ doc("forkee_owner_events_url") }}'
+      - name: forkee_owner_followers_url
+        description: '{{ doc("forkee_owner_followers_url") }}'
+      - name: forkee_owner_following_url
+        description: '{{ doc("forkee_owner_following_url") }}'
+      - name: forkee_owner_gists_url
+        description: '{{ doc("forkee_owner_gists_url") }}'
+      - name: forkee_owner_organizations_url
+        description: '{{ doc("forkee_owner_organizations_url") }}'
+      - name: forkee_owner_received_events_url
+        description: '{{ doc("forkee_owner_received_events_url") }}'
+      - name: forkee_owner_repos_url
+        description: '{{ doc("forkee_owner_repos_url") }}'
+      - name: forkee_owner_starred_url
+        description: '{{ doc("forkee_owner_starred_url") }}'
+      - name: forkee_owner_subscriptions_url
+        description: '{{ doc("forkee_owner_subscriptions_url") }}'
+      - name: forkee_license_key
+        description: '{{ doc("forkee_license_key") }}'
+      - name: forkee_license_name
+        description: '{{ doc("forkee_license_name") }}'
+      - name: forkee_license_node_id
+        description: '{{ doc("forkee_license_node_id") }}'
+      - name: forkee_license_spdx_id
+        description: '{{ doc("forkee_license_spdx_id") }}'
+      - name: forkee_license_object_url
+        description: '{{ doc("forkee_license_object_url") }}'

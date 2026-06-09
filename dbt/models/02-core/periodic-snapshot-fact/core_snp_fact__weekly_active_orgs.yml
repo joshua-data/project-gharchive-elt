@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: core_snp_fact__weekly_active_orgs
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "periodic-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - org_id
+    description: |
+      Activated Orgs (AU pattern applied at the org grain) periodic snapshot
+      fact at the weekly grain — one row per `(org_id, date)` where the
+      organization received at least one org-scoped event between the Sunday
+      that starts the week (`date`) and the current `batch_date`.
+
+      - Grain: one (org, calendar week, Sunday-based).
+      - Primary key: (`org_id`, `date`).
+      - Source: `core_snp_fact__daily_active_orgs`, rolled up by week.
+      - Partitioned by: `date` (day-granularity)
+      - Clustered by: `org_id`
+
+      Inherits the org-scoping caveat from `core_snp_fact__daily_active_orgs`
+      — personal-repo activity is excluded by design. Week convention is
+      `WEEK(SUNDAY)`. `events_count` is the sum of daily `events_count` over
+      the week so far.
+      `active_days` is the sum of daily `active_days` over the week so far,
+      i.e. the number of distinct days within the week the org was active
+      (range 1–7).
+
+      Incremental strategy: `insert_overwrite` with dynamic partition discovery.
+      `batch_filter(interval='week(sunday)')` snaps the **lower bound** of the
+      batch window back to the enclosing Sunday so each batch reads from the
+      start of every affected week through `batch_date`. The weekly row is
+      therefore a **week-to-date** snapshot — partial mid-week, full once the
+      week closes. Each batch re-writes the affected week partitions with the
+      latest WTD value, so late-arriving daily events propagate cleanly.
+    columns:
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: date
+        description: '{{ doc("date") }}'
+      - name: events_count
+        description: '{{ doc("events_count") }}'
+      - name: active_days
+        description: '{{ doc("active_days") }}'

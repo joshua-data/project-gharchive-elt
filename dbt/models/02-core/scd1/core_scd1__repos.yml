@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: core_scd1__repos
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "dim", "scd1"]
+      materialized: incremental
+      incremental_strategy: merge
+      unique_key: repo_id
+      on_schema_change: append_new_columns
+      cluster_by:
+        - repo_id
+    description: |
+      Conformed repository dimension — one row per GitHub repository observed in any event we have ingested.
+      (SCD Type 1: only the latest attribute values are kept; no history.)
+
+      - Grain: one repository.
+      - Primary key: `repo_id`.
+      - Source: `stg_fact__events` (top-level repo columns), restricted to rows with non-null `repo_id`.
+      - Clustered by: `repo_id`
+
+      `created_at` records first sighting and is immutable; `updated_at` advances only when `repo_name` or
+      `repo_object_url` actually changes between batches (most commonly on a repo rename / transfer).
+      Re-observation with identical attributes is a no-op for `updated_at`.
+
+      The rare staging rows with a null `repo_id` (~6 in 1,000,000, observed on `fork_event` rows whose source
+      repo became unavailable) are excluded from this dimension.
+    columns:
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: created_at
+        description: '{{ doc("created_at__scd1") }}'
+      - name: updated_at
+        description: '{{ doc("updated_at__scd1") }}'

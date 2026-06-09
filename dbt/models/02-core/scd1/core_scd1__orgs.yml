@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: core_scd1__orgs
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "dim", "scd1"]
+      materialized: incremental
+      incremental_strategy: merge
+      unique_key: org_id
+      on_schema_change: append_new_columns
+      cluster_by:
+        - org_id
+    description: |
+      Conformed organization dimension — one row per GitHub organization observed in any event we have ingested.
+      (SCD Type 1: only the latest attribute values are kept; no history.)
+
+      - Grain: one organization.
+      - Primary key: `org_id`.
+      - Source: `stg_fact__events` (top-level org columns), restricted to rows with non-null `org_id`
+        (only ~11% of events are org-scoped; the remainder are personal-repo events with no org).
+      - Clustered by: `org_id`
+
+      `created_at` records first sighting and is immutable; `updated_at` advances only when `org_name`,
+      `org_object_url`, or `org_image_url` actually changes between batches.
+      Re-observation with identical attributes is a no-op for `updated_at`.
+    columns:
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: created_at
+        description: '{{ doc("created_at__scd1") }}'
+      - name: updated_at
+        description: '{{ doc("updated_at__scd1") }}'

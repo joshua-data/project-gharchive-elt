@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: core_snp_fact__daily_active_orgs
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "periodic-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - org_id
+    description: |
+      Activated Orgs (AU pattern applied at the org grain) periodic snapshot fact
+      — one row per `(org_id, date)` where at least one event was triggered on a
+      repo owned by that organization on that UTC calendar day.
+
+      - Grain: one (org, day).
+      - Primary key: (`org_id`, `date`).
+      - Source: `stg_fact__events`, filtered to `org_id is not null`.
+      - Partitioned by: `date` (day)
+      - Clustered by: `org_id`
+
+      **Only org-scoped events are included.** `org_id` is null on events whose
+      repo is personally owned (i.e. not owned by an organization), so this table
+      is materially smaller than the user / repo counterparts. Personal-repo
+      activity is excluded by design — see the `org_id` column doc.
+
+      `events_count` records the total event volume contribution on the org
+      that day; `active_days = 1` for every daily row, kept so daily / weekly /
+      monthly grains share the same column shape.
+
+      No `is_public` filter applied — `stg_fact__events` is already the public
+      feed; the rare non-public rows still represent activity.
+
+      Incremental strategy: `insert_overwrite` with dynamic partition discovery
+      — dbt overwrites exactly the `date` partitions present in the model's
+      output, which is scoped by `batch_filter` to the active batch window.
+    columns:
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: date
+        description: '{{ doc("date") }}'
+      - name: events_count
+        description: '{{ doc("events_count") }}'
+      - name: active_days
+        description: '{{ doc("active_days") }}'
