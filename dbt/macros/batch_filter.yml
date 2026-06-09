@@ -3,14 +3,19 @@ version: 2
 macros:
   - name: batch_filter
     description: |
-      Renders a date-range predicate for the `where` clause of batch/incremental models.
+      Renders a date-range predicate for the `where` clause of batch / incremental models.
 
       Window resolution order:
       ① args (`start_date` + `end_date`)
       → ② vars (`batch_start_date` + `batch_end_date`)
       → ③ var (`batch_date`, with a 1-day lookback).
-      
-      Raises a compile error if none resolve, to prevent full scans.
+
+      `interval` snaps only the lower bound back to the start of the
+      enclosing period; the upper bound is left as-is. This widens the scan
+      to cover period-to-date windows (WTD / MTD / QTD) without pulling in
+      future dates that haven't materialised yet.
+
+      Raises a compile error if no window resolves, to prevent full scans.
     arguments:
       - name: date_col
         type: string
@@ -21,3 +26,10 @@ macros:
       - name: end_date
         type: string
         description: Explicit end date (`YYYY-MM-DD`, inclusive). Only honored when paired with `start_date`.
+      - name: interval
+        type: string
+        description: |
+          Period to snap the lower bound back to — passed straight through to
+          BigQuery `DATE_TRUNC`, so any unit `DATE_TRUNC` accepts works:
+          `day` (default, no-op), `week`, `week(<weekday>)`,
+          `month`, `quarter`, `year`.
