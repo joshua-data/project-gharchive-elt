@@ -14,7 +14,7 @@ dim__latest_users as (
         and {{ batch_filter(date_col='created_date') }}
         and user_id is not null
     qualify
-        row_number (over partition by user_id order by created_at desc, event_id desc) = 1
+        row_number() over (partition by user_id order by created_at desc, event_id desc) = 1
 )
 
 select

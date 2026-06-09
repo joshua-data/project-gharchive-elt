@@ -13,7 +13,7 @@ sources:
         description: "GitHub Archive Events Table"
         config:
           tags: ["source", "gharchive", "fact"]
-          loaded_at_field: ingested_at
+          loaded_at_field: "safe_cast(ingested_at as timestamp)"
           freshness:
             warn_after: { count: 2, period: hour }
             error_after: { count: 6, period: hour }
