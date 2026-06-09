@@ -1,0 +1,141 @@
+version: 2
+
+models:
+  - name: core_fact__pull_request_review_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `PullRequestReviewEvent` — a review was submitted (or updated/dismissed) on a pull request.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#pullrequestreviewevent)
+
+      - Grain: one event = one review submission.
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'pull_request_review_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      `review_state` is the analytical headline column (`approved` / `commented` / `changes_requested` / `dismissed`).
+      For the actual line-level comments inside a review, see `core_fact__pull_request_review_comment_events`
+      — review **submissions** and review **comments** are separate event types.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'
+      - name: review_id
+        description: '{{ doc("review_id") }}'
+      - name: review_node_id
+        description: '{{ doc("review_node_id") }}'
+      - name: review_state
+        description: '{{ doc("review_state") }}'
+      - name: review_commit_id
+        description: '{{ doc("review_commit_id") }}'
+      - name: review_body
+        description: '{{ doc("review_body") }}'
+      - name: review_submitted_at
+        description: '{{ doc("review_submitted_at") }}'
+      - name: review_updated_at
+        description: '{{ doc("review_updated_at") }}'
+      - name: review_html_url
+        description: '{{ doc("review_html_url") }}'
+      - name: review_pull_request_url
+        description: '{{ doc("review_pull_request_url") }}'
+      - name: review_html_link_url
+        description: '{{ doc("review_html_link_url") }}'
+      - name: review_pull_request_link_url
+        description: '{{ doc("review_pull_request_link_url") }}'
+      - name: review_user_id
+        description: '{{ doc("review_user_id") }}'
+      - name: review_user_node_id
+        description: '{{ doc("review_user_node_id") }}'
+      - name: review_user_name
+        description: '{{ doc("review_user_name") }}'
+      - name: review_user_type
+        description: '{{ doc("review_user_type") }}'
+      - name: review_user_user_view_type
+        description: '{{ doc("review_user_user_view_type") }}'
+      - name: review_user_gravatar_id
+        description: '{{ doc("review_user_gravatar_id") }}'
+      - name: review_user_site_admin
+        description: '{{ doc("review_user_site_admin") }}'
+      - name: review_user_avatar_url
+        description: '{{ doc("review_user_avatar_url") }}'
+      - name: review_user_object_url
+        description: '{{ doc("review_user_object_url") }}'
+      - name: review_user_html_url
+        description: '{{ doc("review_user_html_url") }}'
+      - name: pull_request_id
+        description: '{{ doc("pr__id") }}'
+      - name: pull_request_number
+        description: '{{ doc("pr__number") }}'
+      - name: pull_request_object_url
+        description: '{{ doc("pr__object_url") }}'
+      - name: pull_request_head_ref
+        description: '{{ doc("pr__head_ref") }}'
+      - name: pull_request_head_sha
+        description: '{{ doc("pr__head_sha") }}'
+      - name: pull_request_head_repo_id
+        description: '{{ doc("pr__head_repo_id") }}'
+      - name: pull_request_head_repo_name
+        description: '{{ doc("pr__head_repo_name") }}'
+      - name: pull_request_head_repo_object_url
+        description: '{{ doc("pr__head_repo_object_url") }}'
+      - name: pull_request_base_ref
+        description: '{{ doc("pr__base_ref") }}'
+      - name: pull_request_base_sha
+        description: '{{ doc("pr__base_sha") }}'
+      - name: pull_request_base_repo_id
+        description: '{{ doc("pr__base_repo_id") }}'
+      - name: pull_request_base_repo_name
+        description: '{{ doc("pr__base_repo_name") }}'
+      - name: pull_request_base_repo_object_url
+        description: '{{ doc("pr__base_repo_object_url") }}'

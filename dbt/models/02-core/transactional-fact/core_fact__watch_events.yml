@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: core_fact__watch_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `WatchEvent` — a user starred a repository.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#watchevent)
+
+      - Grain: one event (one star action by one user on one repo).
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'watch_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      Despite the legacy "watch" name, this event represents a **star** — GitHub renamed the concept
+      to "starring" years ago but kept the event name for API back-compat.
+      The only observed `action` value is `started`. There is no `unstarred` event in the public feed.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: action
+        description: '{{ doc("action") }}'

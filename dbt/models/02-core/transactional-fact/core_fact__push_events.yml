@@ -1,0 +1,84 @@
+version: 2
+
+models:
+  - name: core_fact__push_events
+    config:
+      meta:
+        owner: joshua
+      tags: ["core", "fact", "transactional-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+        - user_id
+    description: |
+      One row per `PushEvent` — one or more commits were pushed to a branch or tag.
+      (https://docs.github.com/en/rest/using-the-rest-api/github-event-types#pushevent)
+
+      - Grain: one event = one push (which may bundle multiple commits — but commit-level detail is no longer
+        in the public feed; see note below).
+      - Primary key: `event_id`.
+      - Source: `stg_fact__events` filtered to `event_name = 'push_event'`.
+      - Partitioned by: `created_date` (day)
+      - Clustered by: (`repo_id`, `user_id`)
+
+      **Payload note**: GitHub stripped `commits[]`, `size`, and `distinct_size` from the public Events feed in 2024
+      (per GH Archive's release notes). What remains is the minimal push metadata: `push_id`, `ref`, `head`, `before`,
+      `repository_id`. Commit-level analytics now require the GitHub REST API or webhook archive — not this feed.
+
+      Largest event type by volume — on a typical day, push events are ~85% of all rows in `stg_fact__events`.
+    columns:
+      - name: event_id
+        description: '{{ doc("event_id") }}'
+      - name: event_name
+        description: '{{ doc("event_name") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: created_at
+        description: '{{ doc("created_at") }}'
+      - name: ingested_date
+        description: '{{ doc("ingested_date") }}'
+      - name: ingested_at
+        description: '{{ doc("ingested_at") }}'
+      - name: user_id
+        description: '{{ doc("user_id") }}'
+      - name: user_name
+        description: '{{ doc("user_name") }}'
+      - name: user_display_name
+        description: '{{ doc("user_display_name") }}'
+      - name: user_object_url
+        description: '{{ doc("user_object_url") }}'
+      - name: user_image_url
+        description: '{{ doc("user_image_url") }}'
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: repo_name
+        description: '{{ doc("repo_name") }}'
+      - name: repo_object_url
+        description: '{{ doc("repo_object_url") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: org_name
+        description: '{{ doc("org_name") }}'
+      - name: org_object_url
+        description: '{{ doc("org_object_url") }}'
+      - name: org_image_url
+        description: '{{ doc("org_image_url") }}'
+      - name: is_public
+        description: '{{ doc("is_public") }}'
+      - name: push_id
+        description: '{{ doc("push_id") }}'
+      - name: ref
+        description: '{{ doc("ref") }}'
+      - name: head
+        description: '{{ doc("push_head") }}'
+      - name: before
+        description: '{{ doc("push_before") }}'
+      - name: repository_id
+        description: '{{ doc("push_repository_id") }}'
