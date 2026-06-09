@@ -70,7 +70,6 @@ jobs:
 
       - name: dbt source freshness
         id: source_freshness
-        continue-on-error: true
         env:
           BATCH_DATE: ${{ steps.resolve_batch_date.outputs.batch_date }}
         run: |
