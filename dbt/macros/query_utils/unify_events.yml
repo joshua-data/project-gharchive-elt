@@ -1,0 +1,43 @@
+version: 2
+
+macros:
+  - name: unify_events
+    description: |
+      Stitches multiple per-event-type `core_fact__*_events` tables into a
+      single homogeneous CTE — one row per source event — so downstream marts
+      can aggregate across all event types without writing 15 disjoint queries.
+
+      Each `branches` entry contributes a `SELECT` block projecting:
+      ① the `shared_columns` (common to every branch),
+      ② a literal `event_name` (the discriminator),
+      ③ optional `extra_columns` (only present on the branches that need them).
+
+      Branches are stitched with BigQuery's `FULL OUTER UNION ALL BY NAME`
+      operator, which aligns columns by name rather than position and pads
+      missing columns with `NULL` — so a counter like
+      `countif(event_name='X' and action='Y')` is safe even on branches that
+      don't expose an `action` column.
+
+      Outer predicates on `shared_columns` (e.g. a `batch_filter(created_date)`
+      placed in the consuming model's `WHERE`) push down through the union to
+      each source table — verified against the partitioned, partition-filter-
+      required `core_fact__*_events` source tables.
+    arguments:
+      - name: shared_columns
+        type: list[string]
+        description: |
+          Column names projected from every branch. Each entry must exist on
+          every source table — they are emitted by name in the order listed
+          (e.g. `['user_id', 'repo_id', 'org_id', 'created_date']`).
+      - name: branches
+        type: list[dict]
+        description: |
+          One entry per source table. Required keys per entry:
+            - `table` (string): the `core_fact__*_events` model name passed to `ref()`.
+            - `event_name` (string): the lowercase event-type literal emitted
+              into the `event_name` column for rows from this branch.
+          Optional key:
+            - `extra_columns` (list[string]): additional columns projected only
+              from this branch. SQL aliasing is supported
+              (e.g. `'review_state as action'`), so heterogeneous columns can
+              be normalized into a shared name across branches.

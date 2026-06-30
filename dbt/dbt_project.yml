@@ -42,3 +42,6 @@ models:
       accumulating-snapshot-fact:
         +docs:
           node_color: "#D35400"
+      periodic-snapshot-fact:
+        +docs:
+          node_color: "#BA4A00"
