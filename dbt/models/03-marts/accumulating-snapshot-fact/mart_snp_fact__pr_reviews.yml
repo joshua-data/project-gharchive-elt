@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: mart_snp_fact__pr_reviews
+    config:
+      meta:
+        owner: joshua
+      tags: ["mart", "fact", "accumulating-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: merge
+      unique_key: review_id
+      partition_by:
+        field: review_submitted_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - pull_request_id
+      on_schema_change: append_new_columns
+    description: |
+      One row per pull-request review submission, accumulating any subsequent updates to the same review.
+
+      - Grain: one (`review_id`).
+      - Primary key: `review_id`.
+      - Source: `core_fact__pull_request_review_events`.
+      - Partitioned by: `review_submitted_date` (day).
+      - Clustered by: `pull_request_id`.
+
+      Accumulating-snapshot semantics: every batch upserts on `review_id` under `merge`; rows are never deleted.
+      Within a batch, the most recent event per `review_id` wins (`row_number() over (partition by review_id order by event_id desc) = 1`),
+      so review-level updates (e.g. body edits, dismissals) overwrite the prior state.
+
+      `review_state` is normalized to one of `{approved, changes_requested, commented, dismissed}`.
+      Per-line review comments live separately in `core_fact__pull_request_review_comment_events`.
+    columns:
+      - name: review_id
+        description: '{{ doc("review_id") }}'
+      - name: pull_request_id
+        description: '{{ doc("pr__id") }}'
+      - name: pull_request_number
+        description: '{{ doc("pr__number") }}'
+      - name: review_user_id
+        description: '{{ doc("review_user_id") }}'
+      - name: review_user_type
+        description: '{{ doc("review_user_type") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: base_repo_id
+        description: '{{ doc("pr__base_repo_id") }}'
+      - name: base_repo_name
+        description: '{{ doc("pr__base_repo_name") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "review_submitted_date between __batch_start_date__ and __batch_end_date__"
+      - name: head_repo_id
+        description: '{{ doc("pr__head_repo_id") }}'
+      - name: head_repo_name
+        description: '{{ doc("pr__head_repo_name") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "review_submitted_date between __batch_start_date__ and __batch_end_date__"
+      - name: review_submitted_at
+        description: '{{ doc("review_submitted_at") }}'
+      - name: review_submitted_date
+        description: '{{ doc("review_submitted_date") }}'
+      - name: review_updated_at
+        description: '{{ doc("review_updated_at") }}'
+      - name: review_updated_date
+        description: '{{ doc("review_updated_date") }}'
+      - name: review_state
+        description: '{{ doc("review_state") }}'
+      - name: review_body
+        description: '{{ doc("review_body") }}'

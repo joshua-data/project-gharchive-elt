@@ -45,9 +45,23 @@ UTC datetime the review was submitted (`payload.review.submitted_at`). The canon
 {% enddocs %}
 
 
+{% docs review_submitted_date %}
+
+UTC date the review was submitted (`DATE(review_submitted_at)`).
+
+{% enddocs %}
+
+
 {% docs review_updated_at %}
 
 UTC datetime the review was last updated (`payload.review.updated_at`).
+
+{% enddocs %}
+
+
+{% docs review_updated_date %}
+
+UTC date the review was last updated (`DATE(review_updated_at)`).
 
 {% enddocs %}
 
