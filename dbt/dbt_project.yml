@@ -38,3 +38,7 @@ models:
       scd1:
         +docs:
           node_color: "#8E44AD"
+    03-marts:
+      accumulating-snapshot-fact:
+        +docs:
+          node_color: "#D35400"

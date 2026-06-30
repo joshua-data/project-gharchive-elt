@@ -73,18 +73,43 @@ models:
         description: '{{ doc("action") }}'
       - name: review_id
         description: '{{ doc("review_id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_node_id
         description: '{{ doc("review_node_id") }}'
       - name: review_state
         description: '{{ doc("review_state") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+          - accepted_values:
+              arguments:
+                values:
+                  - approved
+                  - changes_requested
+                  - commented
+                  - dismissed
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_commit_id
         description: '{{ doc("review_commit_id") }}'
       - name: review_body
         description: '{{ doc("review_body") }}'
       - name: review_submitted_at
         description: '{{ doc("review_submitted_at") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_updated_at
         description: '{{ doc("review_updated_at") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_html_url
         description: '{{ doc("review_html_url") }}'
       - name: review_pull_request_url
@@ -95,12 +120,31 @@ models:
         description: '{{ doc("review_pull_request_link_url") }}'
       - name: review_user_id
         description: '{{ doc("review_user_id") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_user_node_id
         description: '{{ doc("review_user_node_id") }}'
       - name: review_user_name
         description: '{{ doc("review_user_name") }}'
       - name: review_user_type
         description: '{{ doc("review_user_type") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+          - accepted_values:
+              arguments:
+                values:
+                  - user
+                  - bot
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_user_user_view_type
         description: '{{ doc("review_user_user_view_type") }}'
       - name: review_user_gravatar_id
@@ -115,8 +159,16 @@ models:
         description: '{{ doc("review_user_html_url") }}'
       - name: pull_request_id
         description: '{{ doc("pr__id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_number
         description: '{{ doc("pr__number") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_object_url
         description: '{{ doc("pr__object_url") }}'
       - name: pull_request_head_ref
@@ -125,6 +177,12 @@ models:
         description: '{{ doc("pr__head_sha") }}'
       - name: pull_request_head_repo_id
         description: '{{ doc("pr__head_repo_id") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_head_repo_name
         description: '{{ doc("pr__head_repo_name") }}'
       - name: pull_request_head_repo_object_url
@@ -135,6 +193,10 @@ models:
         description: '{{ doc("pr__base_sha") }}'
       - name: pull_request_base_repo_id
         description: '{{ doc("pr__base_repo_id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_base_repo_name
         description: '{{ doc("pr__base_repo_name") }}'
       - name: pull_request_base_repo_object_url
