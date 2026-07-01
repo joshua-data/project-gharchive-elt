@@ -1,0 +1,104 @@
+version: 2
+
+models:
+  - name: mart_snp_fact__weekly_repo_dev_activities
+    config:
+      meta:
+        owner: joshua
+      tags: ["mart", "fact", "periodic-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: insert_overwrite
+      on_schema_change: append_new_columns
+      partition_by:
+        field: created_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - repo_id
+    description: |
+      Weekly dev-activity periodic snapshot fact at the **repo** grain — one
+      row per `(repo_id, created_date)` where the repo received at least one
+      event on that UTC calendar day, with per-event-type counters spread
+      across the row.
+
+      - Grain: one (repo, week, Sunday-based).
+      - Primary key: (`repo_id`, `created_date`).
+      - Source: 15 `core_fact__*_events` tables unified via the `unify_events`
+        macro, filtered to `repo_id is not null`.
+      - Partitioned by: `created_date` (day).
+      - Clustered by: `repo_id`.
+
+      Counterpart to `core_snp_fact__daily_active_repos` (which captures
+      *whether* the repo was active) — this mart captures *what kind of*
+      activity happened, broken out by event type.
+
+      **PR-close counters split by merge outcome.** The mart pre-splits PR
+      closes by whether they were merged:
+      `prs_merged_closed_count` (merged), `prs_unmerged_closed_count`
+      (abandoned / rejected), and `prs_total_closed_count` (the sum). The
+      split mirrors the upstream `core_fact__pull_request_events` model,
+      which emits disjoint `action='merged'` and `action='closed'` rows.
+      Surfacing all three columns saves analysts from re-deriving the total
+      and removes the ambiguity around what `closed` means.
+
+      No `is_public` filter applied — the source `core_fact__*_events`
+      tables already track the public feed; the rare non-public rows
+      still represent activity and we keep parity with the AU snapshots.
+
+      Incremental strategy: `insert_overwrite` with dynamic partition
+      discovery — dbt overwrites exactly the `created_date` partitions
+      present in the model's output, which is scoped by `batch_filter`
+      to the active batch window (today + a 1-day lookback to absorb
+      late-arriving events).
+    columns:
+      - name: repo_id
+        description: '{{ doc("repo_id") }}'
+      - name: created_date
+        description: '{{ doc("created_date") }}'
+      - name: all_events_count
+        description: '{{ doc("all_events_count") }}'
+      - name: unique_orgs_count
+        description: '{{ doc("unique_orgs_count") }}'
+      - name: unique_users_count
+        description: '{{ doc("unique_users_count") }}'
+      - name: pushes_count
+        description: '{{ doc("pushes_count") }}'
+      - name: prs_opened_count
+        description: '{{ doc("prs_opened_count") }}'
+      - name: prs_merged_closed_count
+        description: '{{ doc("prs_merged_closed_count") }}'
+      - name: prs_unmerged_closed_count
+        description: '{{ doc("prs_unmerged_closed_count") }}'
+      - name: prs_total_closed_count
+        description: '{{ doc("prs_total_closed_count") }}'
+      - name: pr_reviews_count
+        description: '{{ doc("pr_reviews_count") }}'
+      - name: pr_reviews_approved_count
+        description: '{{ doc("pr_reviews_approved_count") }}'
+      - name: pr_review_comments_count
+        description: '{{ doc("pr_review_comments_count") }}'
+      - name: issue_comments_count
+        description: '{{ doc("issue_comments_count") }}'
+      - name: commit_comments_count
+        description: '{{ doc("commit_comments_count") }}'
+      - name: issues_opened_count
+        description: '{{ doc("issues_opened_count") }}'
+      - name: issues_closed_count
+        description: '{{ doc("issues_closed_count") }}'
+      - name: branches_created_count
+        description: '{{ doc("branches_created_count") }}'
+      - name: branches_deleted_count
+        description: '{{ doc("branches_deleted_count") }}'
+      - name: releases_count
+        description: '{{ doc("releases_count") }}'
+      - name: discussions_count
+        description: '{{ doc("discussions_count") }}'
+      - name: wiki_pages_updated_count
+        description: '{{ doc("wiki_pages_updated_count") }}'
+      - name: members_updated_count
+        description: '{{ doc("members_updated_count") }}'
+      - name: watches_count
+        description: '{{ doc("watches_count") }}'
+      - name: forks_count
+        description: '{{ doc("forks_count") }}'
