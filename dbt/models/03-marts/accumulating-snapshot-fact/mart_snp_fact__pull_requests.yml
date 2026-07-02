@@ -1,0 +1,88 @@
+version: 2
+
+models:
+  - name: mart_snp_fact__pull_requests
+    config:
+      meta:
+        owner: joshua
+      tags: ["mart", "fact", "accumulating-snapshot-fact"]
+      materialized: incremental
+      incremental_strategy: merge
+      unique_key: pull_request_id
+      partition_by:
+        field: opened_date
+        data_type: date
+        granularity: day
+      require_partition_filter: true
+      cluster_by:
+        - base_repo_id
+        - author_user_id
+      on_schema_change: append_new_columns
+    description: |
+      One row per pull request, accumulating milestone timestamps and latest dimensions as new PR events arrive.
+
+      - Grain: one (`pull_request_id`).
+      - Primary key: `pull_request_id`.
+      - Source: `core_fact__pull_request_events`.
+      - Partitioned by: `opened_date` (day).
+      - Clustered by: `base_repo_id`, `author_user_id`.
+
+      Accumulating-snapshot semantics: every batch upserts on `pull_request_id` under `merge`; rows are never deleted.
+      Within a batch, milestone timestamps (`first_/last_reopened_at`, `first_/last_merged_at`, `first_/last_closed_at`, `last_action_at`)
+      are aggregated from every event in the window; header dimensions (base/head repo, `pull_request_number`) take the
+      most recent event's value (`row_number() over (partition by pull_request_id order by created_at desc, event_id desc) = 1`);
+      `labels` take the most recent `labeled` / `unlabeled` event's snapshot; `author_user_id` is fixed from the first `opened` event.
+
+      Across batches, the SQL reconciles by `least` / `greatest` for milestone extremes and `coalesce` for header dimensions,
+      so a PR touched by events in multiple batches converges to the correct timeline regardless of batch order or re-runs.
+
+      PRs whose `opened` event was never captured (source history begins mid-lifecycle) are excluded — `opened_date is not null`
+      is the gate. GHArchive emits both `closed` and `merged` actions and treats a merge as a distinct close event,
+      so `first_closed_at` / `last_closed_at` include merges.
+    columns:
+      - name: pull_request_id
+        description: '{{ doc("pr__id") }}'
+      - name: pull_request_number
+        description: '{{ doc("pr__number") }}'
+      - name: org_id
+        description: '{{ doc("org_id") }}'
+      - name: base_repo_id
+        description: '{{ doc("pr__base_repo_id") }}'
+      - name: base_repo_name
+        description: '{{ doc("pr__base_repo_name") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "opened_date between __batch_start_date__ and __batch_end_date__"
+      - name: head_repo_id
+        description: '{{ doc("pr__head_repo_id") }}'
+      - name: head_repo_name
+        description: '{{ doc("pr__head_repo_name") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "opened_date between __batch_start_date__ and __batch_end_date__"
+      - name: author_user_id
+        description: '{{ doc("pr__author_user_id") }}'
+      - name: labels
+        description: '{{ doc("pr__labels") }}'
+      - name: opened_date
+        description: '{{ doc("pr__opened_date") }}'
+      - name: opened_at
+        description: '{{ doc("pr__opened_at") }}'
+      - name: first_reopened_at
+        description: '{{ doc("pr__first_reopened_at") }}'
+      - name: last_reopened_at
+        description: '{{ doc("pr__last_reopened_at") }}'
+      - name: first_merged_at
+        description: '{{ doc("pr__first_merged_at") }}'
+      - name: last_merged_at
+        description: '{{ doc("pr__last_merged_at") }}'
+      - name: first_closed_at
+        description: '{{ doc("pr__first_closed_at") }}'
+      - name: last_closed_at
+        description: '{{ doc("pr__last_closed_at") }}'
+      - name: last_action_at
+        description: '{{ doc("pr__last_action_at") }}'

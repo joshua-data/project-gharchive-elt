@@ -49,6 +49,10 @@ models:
         description: '{{ doc("ingested_at") }}'
       - name: user_id
         description: '{{ doc("user_id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: user_name
         description: '{{ doc("user_name") }}'
       - name: user_display_name
@@ -75,10 +79,35 @@ models:
         description: '{{ doc("is_public") }}'
       - name: action
         description: '{{ doc("action") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
+          - accepted_values:
+              arguments:
+                values:
+                  - opened
+                  - closed
+                  - merged
+                  - reopened
+                  - labeled
+                  - unlabeled
+                  - assigned
+                  - unassigned
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_id
         description: '{{ doc("pr__id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_number
         description: '{{ doc("pr__number") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_object_url
         description: '{{ doc("pr__object_url") }}'
       - name: pull_request_head_ref
@@ -87,6 +116,12 @@ models:
         description: '{{ doc("pr__head_sha") }}'
       - name: pull_request_head_repo_id
         description: '{{ doc("pr__head_repo_id") }}'
+        data_tests:
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.9999
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_head_repo_name
         description: '{{ doc("pr__head_repo_name") }}'
       - name: pull_request_head_repo_object_url
@@ -97,6 +132,10 @@ models:
         description: '{{ doc("pr__base_sha") }}'
       - name: pull_request_base_repo_id
         description: '{{ doc("pr__base_repo_id") }}'
+        data_tests:
+          - not_null:
+              config:
+                where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_base_repo_name
         description: '{{ doc("pr__base_repo_name") }}'
       - name: pull_request_base_repo_object_url
