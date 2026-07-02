@@ -33,3 +33,34 @@ macros:
           BigQuery `DATE_TRUNC`, so any unit `DATE_TRUNC` accepts works:
           `day` (default, no-op), `week`, `week(<weekday>)`,
           `month`, `quarter`, `year`.
+
+  - name: reverse_batch_filter
+    description: |
+      Renders an open-ended "before this batch" predicate (`date_col < <lower bound>`)
+      for the `where` clause of batch / incremental models. Useful for backfilling
+      or reprocessing everything strictly prior to the current batch window — e.g.
+      seeding an accumulating-snapshot fact from historical partitions.
+
+      Lower-bound resolution order:
+      ① arg (`start_date`)
+      → ② var (`batch_start_date`)
+      → ③ var (`batch_date`, with a 1-day lookback).
+
+      `interval` snaps the bound back to the start of the enclosing period so the
+      predicate cleanly excludes the current period-to-date window.
+
+      Raises a compile error if no bound resolves, to prevent full scans.
+    arguments:
+      - name: date_col
+        type: string
+        description: Name of the `DATE` column to filter on. Defaults to `dt` (the Hive partition column on `raw__gharchive.ext__events`).
+      - name: start_date
+        type: string
+        description: Explicit lower bound (`YYYY-MM-DD`, exclusive after snapping). Takes precedence over vars.
+      - name: interval
+        type: string
+        description: |
+          Period to snap the lower bound back to — passed straight through to
+          BigQuery `DATE_TRUNC`, so any unit `DATE_TRUNC` accepts works:
+          `day` (default, no-op), `week`, `week(<weekday>)`,
+          `month`, `quarter`, `year`.
