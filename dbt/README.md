@@ -75,9 +75,9 @@ DBT_PROFILES_DIR=. dbt docs serve --port 8081
 
 ## Batch window macros
 
-Two macros centralize the batch window, one for **models** and one for **tests**. Both consume the same `batch_*` vars described under *Conventions* so the model build and the assertions that follow it cover the same partitions.
+Three macros centralize the batch window: two predicate helpers for **model** SQL (`batch_filter`, `reverse_batch_filter`) and one dbt override for **test** `where` configs (`get_where_subquery`). All three consume the same `batch_*` vars described under *Conventions* so the model build and the assertions that follow it cover the same partitions.
 
-### `batch_filter` — predicate for model SQL
+### `batch_filter` — closed-range predicate for model SQL
 
 Emits a BETWEEN predicate over a date column.
 
@@ -108,6 +108,39 @@ where {{ batch_filter('date', interval='week(sunday)') }}
 -- monthly snapshot: snap lower bound back to the 1st of the enclosing month
 where {{ batch_filter('date', interval='month') }}
 ```
+
+### `reverse_batch_filter` — "before this batch" predicate for baselines
+
+Emits an open-ended `date_col < <lower bound>` predicate — the complement of `batch_filter`. Used when a model needs to read everything *strictly prior* to the current batch window: seeding an accumulating-snapshot fact from historical partitions, computing prior-period baselines for change detection, etc.
+
+```sql
+{{ reverse_batch_filter(date_col='dt', start_date=none, interval='day') }}
+```
+
+Bound resolution mirrors `batch_filter` (`start_date` arg → `batch_start_date` var → `batch_date` var with 1-day lookback → compile error). `interval` snaps the bound to the enclosing period start so the predicate cleanly excludes the current period-to-date window.
+
+```sql
+-- everything before the current batch window's lower bound
+where {{ reverse_batch_filter('dt') }}
+
+-- weekly baseline: everything before this week's Sunday start
+where {{ reverse_batch_filter('date', interval='week(sunday)') }}
+```
+
+### `get_where_subquery` — batch-aware test predicates
+
+Overrides dbt's built-in `get_where_subquery` so that any `__batch_start_date__` / `__batch_end_date__` placeholder inside a test's `where` config is rewritten to a `date 'YYYY-MM-DD'` literal at compile time. Lets test YAML scope assertions to the batch window without embedding `{{ var('...') }}` (which dbt doesn't render inside `where` configs). Falls back to dbt's default behavior when no placeholder is present.
+
+```yaml
+# in a schema.yml test config
+tests:
+  - not_null:
+      column_name: repo_id
+      config:
+        where: "dt between __batch_start_date__ and __batch_end_date__"
+```
+
+Value resolution mirrors `batch_filter` (`batch_start_date` + `batch_end_date` → `batch_date` → error). Note: unlike `batch_filter`, **no 1-day lookback is applied** on the `batch_date` path — the lookback happens once at the model layer, so re-applying it in tests would double-count.
 
 ## Backfill
 
