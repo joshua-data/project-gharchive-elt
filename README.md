@@ -5,7 +5,7 @@
 **How it runs:**
 - **Ingest (hourly):** a Python container executes as a **Cloud Run Job**, triggered every hour by **Cloud Scheduler**. Built and deployed by GitHub Actions on every push to `main`.
 - **Transform (daily):** GitHub Actions schedule (`17 6 * * *` UTC) runs `dbt build` against BigQuery. On every push to `main` that touches `dbt/**`, the same workflow regenerates dbt docs and publishes them to the [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io) repo.
-- **Visualize (daily):** a second GitHub Actions workflow (`27 6 * * *` UTC, plus push on `evidence/**`) builds an [Evidence.dev](https://evidence.dev) static BI site from the curated marts and publishes it alongside dbt docs on GitHub Pages.
+- **Visualize (daily):** a second GitHub Actions workflow (`evidence-build`, chained to `dbt-run` via `workflow_run`, plus push on `evidence/**` and manual `workflow_dispatch`) builds an [Evidence.dev](https://evidence.dev) static BI site from the curated marts and publishes it alongside dbt docs on GitHub Pages.
 
 **How it's managed:** all GCP infrastructure (bucket, datasets, table, Cloud Run Job, scheduler, service accounts, IAM, WIF) lives in one Terraform root module under `terraform/`. All four workflows (terraform, ingest-deploy, dbt-run, evidence-build) authenticate via **Workload Identity Federation** — no service-account keys exist anywhere in the repo or in GitHub.
 
@@ -33,18 +33,21 @@ flowchart LR
 
     EXT["📥 data.gharchive.org<br/><i>.json.gz</i>"]
     DOCS["📖 joshua-data.github.io<br/><i>project-gharchive-elt/dbt-docs/</i>"]
+    EVIDENCE["📊 joshua-data.github.io<br/><i>project-gharchive-elt/evidence/</i>"]
 
     REPO --> GHA
     GHA -->|"build &amp; push image"| AR
     GHA -->|"terraform apply"| GCP
     GHA -->|"dbt build (daily 06:17 UTC)"| BQ
     GHA -->|"publish docs"| DOCS
+    GHA -->|"evidence build (post-dbt)"| EVIDENCE
     AR -->|"image"| JOB
     SCH -->|"POST :run"| JOB
     JOB -->|"GET .json.gz"| EXT
     JOB -->|"write Parquet + _SUCCESS"| GCS
     GCS -->|"external table source"| BQ
     BQ -->|"dbt transform"| DW
+    DW -.->|"queries → Parquet"| EVIDENCE
 
     classDef primary   fill:#667eea,stroke:#764ba2,color:#fff,stroke-width:3px
     classDef secondary fill:#4facfe,stroke:#00f2fe,color:#fff,stroke-width:2px
@@ -56,7 +59,7 @@ flowchart LR
     class GCS secondary
     class BQ,DW success
     class AR warning
-    class REPO,GHA,EXT,DOCS neutral
+    class REPO,GHA,EXT,DOCS,EVIDENCE neutral
 
     style GH fill:#94a3b815,stroke:#94a3b8,stroke-width:2px
     style GCP fill:#667eea15,stroke:#667eea,stroke-width:2px
@@ -71,6 +74,7 @@ flowchart LR
 5. JSON-Lines are streamed into a stable Parquet schema (Snappy-compressed) and uploaded to `gs://{project}-gharchive/events/dt=YYYY-MM-DD/hr=HH/YYYY-MM-DD-HH.parquet`, followed by an empty `_SUCCESS` sibling.
 6. The **BigQuery external table** (`raw__gharchive.ext__events`) is configured with Hive partitioning AUTO, so new partitions become queryable immediately — no metadata refresh needed.
 7. **dbt** (`dbt-run.yml`, daily `17 6 * * *` UTC) impersonates `gharchive-dbt-runner` via WIF, runs `dbt build --target prod --vars '{batch_date: <yesterday UTC>}'` against BigQuery, materializing curated facts and dimensions into `dw`. On every push to `main` that touches `dbt/**`, the same workflow also regenerates docs and publishes them to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`.
+8. **Evidence** (`evidence-build.yml`, chained to `dbt-run` via `workflow_run`) impersonates the same `gharchive-dbt-runner` SA. `npm run sources` materializes each `sources/bigquery/*.sql` against the fresh `dw` marts into local Parquet, `npm run build` compiles the SvelteKit site (DuckDB-WASM reads the Parquet in the browser — no live warehouse call), and the build is pushed to `joshua-data.github.io/project-gharchive-elt/evidence/`. Also fires on push to `main` under `evidence/**` and on manual `workflow_dispatch`.
 
 ## Tech stack
 
@@ -91,3 +95,4 @@ There's no shortcut: the infra has to exist before the ingest job can run, and i
 2. **Deploy ingest** → push to `main`; `ingest-deploy.yml` builds the image and points the Cloud Run Job at it. Wait for at least one hourly run to land Parquet in GCS.
 3. **Develop or backfill locally** → [`ingest/README.md`](ingest/README.md) (Python venv + ADC, or the `scripts/backfill.sh` Docker wrapper).
 4. **Write dbt models** → [`dbt/README.md`](dbt/README.md) (local: `gcloud auth application-default login` + `dbt build --target dev`). Add the `DBT_DOCS_DEPLOY_TOKEN` secret (PAT for `joshua-data.github.io`) before the scheduled `dbt-run.yml` can publish docs.
+5. **Author Evidence pages** → [`evidence/README.md`](evidence/README.md) (local: same ADC as dbt, `npm install && npm run dev`). Evidence deploy reuses the `DBT_DOCS_DEPLOY_TOKEN` secret added in step 4 — no extra secret needed. The first auto-deploy happens after the next successful `dbt-run` on `main` (via `workflow_run` chain).
