@@ -1,0 +1,106 @@
+name: evidence-build
+
+on:
+  workflow_run:
+    workflows: ["dbt-run"]
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "evidence/**"
+      - "!evidence/README.md"
+      - ".github/workflows/evidence-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: evidence-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+
+jobs:
+  evidence:
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evidence
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v6.0.0
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: evidence/package-lock.json
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.DBT_RUNNER_SA_EMAIL }}
+
+      - name: export ADC path
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=${{ steps.auth.outputs.credentials_file_path }}" >> "$GITHUB_ENV"
+
+      - name: npm ci
+        run: npm ci
+
+      - name: evidence sources
+        run: npm run sources
+
+      - name: evidence build
+        run: npm run build
+
+      - name: assert no credentials in build
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if grep -RIEl 'BEGIN PRIVATE KEY|"private_key"|\.iam\.gserviceaccount\.com' evidence/build; then
+            echo "credential-like content detected in build/; refusing to publish"
+            exit 1
+          fi
+          echo "OK"
+
+      - name: checkout docs site
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: joshua-data/joshua-data.github.io
+          token: ${{ secrets.DBT_DOCS_DEPLOY_TOKEN }}
+          path: docs-site
+
+      - name: publish evidence
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          OLD_DEST="docs-site/project-gharchive-elt/dashboard"
+          if [ -d "$OLD_DEST" ]; then
+            rm -rf "$OLD_DEST"
+          fi
+
+          DEST="docs-site/project-gharchive-elt/evidence"
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          cp -R evidence/build/. "$DEST/"
+
+          cd docs-site
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add project-gharchive-elt
+          if git diff --cached --quiet; then
+            echo "no evidence changes to publish"
+            exit 0
+          fi
+          git commit -m "chore(evidence): update from gharchive-elt@${GITHUB_SHA::7}"
+          git push

@@ -1,0 +1,6 @@
+.evidence/
+build/
+sources/**/*.parquet
+sources/**/*.schema.json
+sources/**/manifest.json
+node_modules/

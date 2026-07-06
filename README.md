@@ -5,10 +5,11 @@
 **How it runs:**
 - **Ingest (hourly):** a Python container executes as a **Cloud Run Job**, triggered every hour by **Cloud Scheduler**. Built and deployed by GitHub Actions on every push to `main`.
 - **Transform (daily):** GitHub Actions schedule (`17 6 * * *` UTC) runs `dbt build` against BigQuery. On every push to `main` that touches `dbt/**`, the same workflow regenerates dbt docs and publishes them to the [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io) repo.
+- **Visualize (daily):** a second GitHub Actions workflow (`27 6 * * *` UTC, plus push on `evidence/**`) builds an [Evidence.dev](https://evidence.dev) static BI site from the curated marts and publishes it alongside dbt docs on GitHub Pages.
 
-**How it's managed:** all GCP infrastructure (bucket, datasets, table, Cloud Run Job, scheduler, service accounts, IAM, WIF) lives in one Terraform root module under `terraform/`. All three workflows (terraform, ingest-deploy, dbt-run) authenticate via **Workload Identity Federation** — no service-account keys exist anywhere in the repo or in GitHub.
+**How it's managed:** all GCP infrastructure (bucket, datasets, table, Cloud Run Job, scheduler, service accounts, IAM, WIF) lives in one Terraform root module under `terraform/`. All four workflows (terraform, ingest-deploy, dbt-run, evidence-build) authenticate via **Workload Identity Federation** — no service-account keys exist anywhere in the repo or in GitHub.
 
-**Where to start:** pipeline code → [`ingest/`](ingest/README.md). Transformation models → [`dbt/`](dbt/README.md). Infrastructure → [`terraform/`](terraform/README.md). Hosted dbt docs → <https://joshua-data.github.io/project-gharchive-elt/dbt-docs/>.
+**Where to start:** pipeline code → [`ingest/`](ingest/README.md). Transformation models → [`dbt/`](dbt/README.md). Evidence site → [`evidence/`](evidence/README.md). Infrastructure → [`terraform/`](terraform/README.md). Hosted dbt docs → <https://joshua-data.github.io/project-gharchive-elt/dbt-docs/>. Hosted Evidence site → <https://joshua-data.github.io/project-gharchive-elt/evidence/>.
 
 ## Architecture
 
