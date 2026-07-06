@@ -1,0 +1,27 @@
+{
+  "name": "gharchive-evidence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "evidence build",
+    "build:strict": "evidence build:strict",
+    "dev": "evidence dev",
+    "sources": "evidence sources"
+  },
+  "dependencies": {
+    "@evidence-dev/bigquery": "^2.0.12",
+    "@evidence-dev/core-components": "^5.4.2",
+    "@evidence-dev/evidence": "^40.1.8",
+    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "git-remote-origin-url": "^4.0.0"
+  }
+}

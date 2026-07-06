@@ -45,3 +45,11 @@ dbt/target/
 dbt/dbt_packages/
 dbt/logs/
 dbt/.user.yml
+
+# evidence (Evidence.dev site)
+evidence/.evidence/
+evidence/build/
+evidence/node_modules/
+evidence/sources/**/*.parquet
+evidence/sources/**/*.schema.json
+evidence/sources/**/manifest.json

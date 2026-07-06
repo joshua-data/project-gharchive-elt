@@ -1,0 +1,6 @@
+name: bigquery
+type: bigquery
+options:
+  project_id: joshua-data
+  location: asia-northeast3
+  authenticator: gcloud-cli
