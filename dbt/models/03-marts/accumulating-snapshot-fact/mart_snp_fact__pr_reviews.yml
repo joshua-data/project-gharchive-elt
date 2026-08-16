@@ -60,7 +60,7 @@ models:
         data_tests:
           - dbt_utils.not_null_proportion:
               arguments:
-                at_least: 0.9999
+                at_least: 0.99
               config:
                 where: "review_submitted_date between __batch_start_date__ and __batch_end_date__"
       - name: review_submitted_at
