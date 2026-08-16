@@ -140,7 +140,7 @@ tests:
         where: "dt between __batch_start_date__ and __batch_end_date__"
 ```
 
-Value resolution mirrors `batch_filter` (`batch_start_date` + `batch_end_date` → `batch_date` → error). Note: unlike `batch_filter`, **no 1-day lookback is applied** on the `batch_date` path — the lookback happens once at the model layer, so re-applying it in tests would double-count.
+Value resolution mirrors `batch_filter` exactly (`batch_start_date` + `batch_end_date` → `batch_date` → error), **including the 1-day lookback** on the `batch_date` path. A test scoped with these placeholders therefore asserts over `[batch_date - 1 day, batch_date]` — the same two partitions the model layer materializes, not a single day. Worth remembering when reading a failure: one bad row makes the test fail on two consecutive daily runs, because the lookback pulls its partition into both windows.
 
 ## Backfill
 
@@ -161,14 +161,45 @@ DBT_PROFILES_DIR=. dbt build --target dev \
 Or, for incremental models that need per-day materialization, loop in a shell:
 
 ```bash
-for d in $(seq 0 6); do
-  RD=$(date -u -v-${d}d +%Y-%m-%d)   # macOS; on Linux: date -u -d "$d days ago" +%F
+for d in $(seq 6 -1 0); do             # oldest → newest; see the warning below
+  RD=$(date -u -v-${d}d +%Y-%m-%d)     # macOS; on Linux: date -u -d "$d days ago" +%F
   DBT_PROFILES_DIR=. dbt build --target dev \
     --vars "{batch_date: '$RD'}"
 done
 ```
 
-Prod backfills via CI are not directly supported — `dbt-run.yml` is triggered only by `schedule` (daily) and by `push` to `main` on `dbt/**` (excluding `dbt/README.md`) and the workflow file itself. Both of those always resolve `batch_date` to yesterday UTC, so they can't target an arbitrary past day. Local prod runs also require `bigquery.dataEditor` on `dw`, which only `gharchive-dbt-runner` has by default. To backfill a specific historical date in prod, temporarily add a `workflow_dispatch` trigger (with a `batch_date` input) to `dbt-run.yml`, or run locally while impersonating `gharchive-dbt-runner`.
+### Never end a backfill window before the latest materialized date
+
+The twelve weekly / monthly periodic-snapshot models (`mart_snp_fact__{weekly,monthly}_*_dev_activities`, `core_snp_fact__{weekly,monthly}_active_*`) are `insert_overwrite` partitioned on a `date_trunc`'d date, and `batch_filter(..., interval=...)` snaps only the **lower** bound. So the partition they rewrite always spans a full period, but the data they rewrite it from spans only the batch window.
+
+Backfilling `2026-08-12` alone resolves to `[date_trunc('2026-08-11', week(sunday)), '2026-08-12']` = `2026-08-09 → 2026-08-12`. That recomputes the `2026-08-09` weekly partition from four days instead of seven and **silently discards the 08-13 / 08-14 rows already materialized**. Monthly models lose the same days from `2026-08-01`.
+
+Two safe shapes:
+
+- Range vars ending at the latest fully ingested date — preferred, one pass:
+  ```bash
+  DBT_PROFILES_DIR=. dbt build --target prod \
+    --vars '{batch_start_date: "2026-08-11", batch_end_date: "2026-08-14"}'
+  ```
+- The per-day loop above, iterating **oldest → newest and running through to the present**. The final iteration is what restores the week/month rollups; stopping early leaves them truncated.
+
+Re-running a window is otherwise safe: every model is `incremental` with `insert_overwrite` (partition-scoped) or `merge` (upsert), so no row outside the window is ever deleted.
+
+### Backfilling prod
+
+Run it locally, as the project owner:
+
+```bash
+gcloud auth application-default login        # once
+DBT_PROFILES_DIR=. dbt build --target prod \
+  --vars '{batch_start_date: "...", batch_end_date: "..."}'
+```
+
+The `prod` profile uses `method: oauth`, so it picks up ADC directly. The project owner holds `roles/owner` on `joshua-data`, which already grants BigQuery write access to `dw` — no service-account impersonation and no extra IAM grant needed. (A contributor without project-level access would need `bigquery.dataEditor` on `dw`, which otherwise only `gharchive-dbt-runner` has.)
+
+Skip `dbt source freshness` (it checks the live source, which says nothing about a historical window) and `dbt docs generate` (a backfill should not republish docs).
+
+**`workflow_dispatch` is deliberately not wired into `dbt-run.yml`.** This is a public repository and that workflow impersonates `gharchive-dbt-runner`, which can write to `dw`; a manual trigger taking free-form date inputs widens that surface for no real gain. `dbt-run.yml` keeps its two triggers (`schedule`, `push` to `main`), both of which always resolve `batch_date` to yesterday UTC — so CI can never target a historical day, by design. Backfills are a local, owner-run operation.
 
 ## CI/CD
 
@@ -176,7 +207,7 @@ Prod backfills via CI are not directly supported — `dbt-run.yml` is triggered 
 |---|---|---|
 | `17 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → `dbt source freshness` (warn-only, won't block) → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` |
 | `push` → `main` on `dbt/**` (excluding `dbt/README.md`) or the workflow file | `.github/workflows/dbt-run.yml` (`push`) | Same build steps as the scheduled run, plus `dbt docs generate` + publish docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`. Every merge that touches `dbt/` therefore re-runs prod once and refreshes docs. |
-| Manual | *(not configured)* | `workflow_dispatch` is not wired up — add it temporarily for historical backfills |
+| Manual | *(none — by design)* | `workflow_dispatch` is deliberately not wired up: public repo, and the workflow can write to `dw`. Backfills run locally — see [Backfill](#backfill) |
 | PR | *(none — by design)* | dbt CI is not run on PRs; the WIF attribute condition refuses non-`main` refs |
 
 Both triggers (schedule and push-to-`main`) run against `main`, so they satisfy the WIF condition `assertion.ref == "refs/heads/main"`. The `dbt-runner` SA is impersonated using the same WIF pool as `terraform.yml` / `ingest-deploy.yml`.

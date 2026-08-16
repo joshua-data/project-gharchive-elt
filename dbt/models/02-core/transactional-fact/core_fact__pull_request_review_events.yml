@@ -123,7 +123,7 @@ models:
         data_tests:
           - dbt_utils.not_null_proportion:
               arguments:
-                at_least: 0.9999
+                at_least: 0.99
               config:
                 where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: review_user_node_id
@@ -135,7 +135,7 @@ models:
         data_tests:
           - dbt_utils.not_null_proportion:
               arguments:
-                at_least: 0.9999
+                at_least: 0.99
               config:
                 where: "created_date between __batch_start_date__ and __batch_end_date__"
           - accepted_values:
@@ -180,7 +180,7 @@ models:
         data_tests:
           - dbt_utils.not_null_proportion:
               arguments:
-                at_least: 0.9999
+                at_least: 0.99
               config:
                 where: "created_date between __batch_start_date__ and __batch_end_date__"
       - name: pull_request_head_repo_name

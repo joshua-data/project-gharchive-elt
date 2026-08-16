@@ -18,7 +18,9 @@ macros:
       Helper used by `get_where_subquery`. Replaces `__batch_start_date__` / `__batch_end_date__` tokens in a string with `date '...'` literals.
 
       Values resolve from `batch_start_date` / `batch_end_date` vars, falling back to `batch_date`.
-      Unlike `batch_filter`, no 1-day lookback is applied (the model layer already handles it).
+      Resolution mirrors `batch_filter` exactly, including the 1-day lookback on the `batch_date`
+      path — a test scoped this way asserts over `[batch_date - 1 day, batch_date]`, the same two
+      partitions the model layer materializes, so a single bad row is caught on two consecutive runs.
     arguments:
       - name: where_string
         type: string
