@@ -205,10 +205,14 @@ Skip `dbt source freshness` (it checks the live source, which says nothing about
 
 | When | Workflow | What it does |
 |---|---|---|
-| `17 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → `dbt source freshness` (warn-only, won't block) → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` |
+| `17 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → `dbt source freshness` (**blocking**) → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` |
 | `push` → `main` on `dbt/**` (excluding `dbt/README.md`) or the workflow file | `.github/workflows/dbt-run.yml` (`push`) | Same build steps as the scheduled run, plus `dbt docs generate` + publish docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`. Every merge that touches `dbt/` therefore re-runs prod once and refreshes docs. |
 | Manual | *(none — by design)* | `workflow_dispatch` is deliberately not wired up: public repo, and the workflow can write to `dw`. Backfills run locally — see [Backfill](#backfill) |
 | PR | *(none — by design)* | dbt CI is not run on PRs; the WIF attribute condition refuses non-`main` refs |
+
+**`dbt source freshness` is a hard gate.** The step has no `continue-on-error`, so a `warn_after` breach still exits 0 and passes, but an `error_after` breach exits 1 and fails the job before `dbt build` ever runs — no models refresh, no docs publish, and `evidence-build` (a `workflow_run` consumer of this workflow) is skipped. That is deliberate: `batch_date` always resolves to yesterday UTC, so a stale source means the batch would be built from an incomplete day.
+
+It also makes this workflow the de-facto monitor for the ingestion pipeline. In the 2026-09 Cloud Run OOM incident the hourly job had been dead for 32 hours before anything alerted, and this step is what surfaced it — see [`ingest/README.md`](../ingest/README.md). Thresholds live in `models/sources.yml` (`warn_after` 2 h, `error_after` 6 h, filtered to `dt >= current_date - 2`).
 
 Both triggers (schedule and push-to-`main`) run against `main`, so they satisfy the WIF condition `assertion.ref == "refs/heads/main"`. The `dbt-runner` SA is impersonated using the same WIF pool as `terraform.yml` / `ingest-deploy.yml`.
 
