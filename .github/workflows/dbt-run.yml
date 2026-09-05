@@ -1,7 +1,6 @@
 name: dbt-run
 
 on:
-  workflow_dispatch:
   schedule:
     - cron: "17 6 * * *" # daily 06:17 UTC; off-the-hour to avoid GitHub Actions scheduler queue spikes
   push:
