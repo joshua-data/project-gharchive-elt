@@ -71,9 +71,9 @@ flowchart TB
 |---|---|
 | `src/gharchive/__main__.py` | Entry point. Loads settings, resolves target hours, orchestrates per-hour processing, decides exit code. |
 | `src/gharchive/config.py` | `Settings` (Pydantic `BaseSettings`) — reads env vars / `.env`, holds defaults for URL & HTTP timeout. |
-| `src/gharchive/gharchive_client.py` | `GharchiveClient` — HTTP fetch + gzip decode + JSON-Lines iterator, with a retry loop for 404/5xx/network. |
+| `src/gharchive/gharchive_client.py` | `GharchiveClient` — streams the `.json.gz` to a temp file, then decodes it into a JSON-Lines iterator, with a retry loop for 404/5xx/network. |
 | `src/gharchive/models.py` | `Event` dataclass (`slots=True`) — the canonical record, including `hour` / `ingested_at` lineage fields. |
-| `src/gharchive/gcs_writer.py` | `GCSWriter` + `PARQUET_SCHEMA` + path helpers. Serializes records to Parquet (Snappy) and uploads. |
+| `src/gharchive/gcs_writer.py` | `GCSWriter` + `PARQUET_SCHEMA` + path helpers. Writes records to Parquet (Snappy) one row group at a time, then uploads the file. |
 
 ## How a run picks which hours to process
 
@@ -86,6 +86,41 @@ flowchart TB
 | 3 | (default — auto mode) | `end = now_utc - LAG_HOURS`, `start = end - CATCHUP_HOURS`. The scheduled job runs in this mode. |
 
 **Why `CATCHUP_HOURS` exists.** Re-processing the last few hours every run is essentially free because each hour with a `_SUCCESS` marker is skipped without downloading. If a single hour failed (gharchive late, transient 5xx, network blip), the next scheduled invocation just picks it up — no on-call paging, no manual backfill. We rely on this instead of Cloud Scheduler retries (see *Retries & timeouts*).
+
+It also sets **how wide a gap can heal itself**: an outage longer than `CATCHUP_HOURS` slides out of the window and leaves a permanent hole that only a manual backfill can fill. It was `3` during the OOM incident above, which is why a 32-hour stall needed one; it is now `12`.
+
+## Why the pipeline is streaming end to end
+
+Nothing in a run holds a whole hour in memory. The download is spooled to a temp file in
+`DOWNLOAD_CHUNK_BYTES` chunks, decompressed lazily line by line, and handed to
+`GCSWriter.write_parquet()` as a generator. That generator is drained into row-group batches
+capped by `PARQUET_BATCH_MAX_BYTES` / `PARQUET_BATCH_MAX_ROWS` (`gcs_writer.py`), each flushed
+through `pq.ParquetWriter` to a local file that is then uploaded with `upload_from_filename`
+(resumable above 8 MB).
+
+**Why it has to be this way.** On 2026-09-03 GH Archive started inlining issue, PR and comment
+bodies. Event *counts* did not move, but the average event went from ~760 B to ~5.4 KB — an hour
+went from 36 MB to over 400 MB uncompressed, with a heavy tail (p99 ≈ 32 KB, largest single event
+≈ 600 KB). The previous implementation buffered the whole `.gz` in memory and materialized every
+event into one Python list before building a single Arrow table, so peak RSS tracked the payload
+size directly: **2.0 GB** for the 2026-09-05-06 hour, against a 1 GiB Cloud Run limit. The job was
+OOM-killed every run, and because `resolve_target_hours()` processes the window oldest-first, each
+new run died on the same hour and never reached the newer ones — ingestion stalled for 32 hours
+until `dbt source freshness` failed the daily build.
+
+Measured on that same hour (75,042 events, 83 MB gz, 404 MB uncompressed, 131 MB Parquet out):
+
+| batching | peak RSS | elapsed |
+|---|---|---|
+| none (previous behaviour) | 2,011 MB | 7.0 s |
+| 64 MB batches | 627 MB | 7.1 s |
+| **16 MB batches (current)** | **345 MB** | 7.0 s |
+| 8 MB batches | 246 MB | 7.0 s |
+
+Peak memory tracks the batch cap almost linearly, and shrinking it costs nothing in runtime or
+output size. `PARQUET_BATCH_MAX_BYTES` is therefore the knob to reach for if upstream grows again
+— the row cap only binds back when events are small. Note that Cloud Run mounts `/tmp` as a tmpfs,
+so the spooled `.gz` and the staged Parquet file count against the container memory limit too.
 
 ## GCS layout & Parquet schema
 

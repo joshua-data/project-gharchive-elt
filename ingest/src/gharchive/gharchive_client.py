@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import gzip
-import io
 import json
 import logging
+import tempfile
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import IO, Any
 
 import httpx
 
 log = logging.getLogger(__name__)
+
+DOWNLOAD_CHUNK_BYTES = 1 << 20
 
 
 class GharchiveClient:
@@ -34,28 +36,33 @@ class GharchiveClient:
         url = f"{self._base_url}/{hour}.json.gz"
         return url
 
-    # Decompress in-memory and yield JSON objects line-by-line.
+    # Spool the compressed payload to a temp file, then decompress and yield JSON objects
+    # line-by-line. Peak memory stays flat no matter how large the hourly archive is.
     def download_hour(self, hour: str) -> Iterator[dict[str, Any]]:
         url = self.url_for(hour)
-        bytes = self._fetch_with_retry(url)
-        log.info("fetched %s (%d bytes gz)", url, len(bytes))
+        with tempfile.NamedTemporaryFile(suffix=".json.gz") as spool:
+            size = self._fetch_with_retry(url, spool)
+            log.info("fetched %s (%d bytes gz)", url, size)
+            spool.seek(0)
 
-        with gzip.GzipFile(fileobj=io.BytesIO(bytes), mode="rb") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError as err:
-                    log.warning("skip malformed line: %s", err)
+            with gzip.open(spool, "rb") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        yield json.loads(line)
+                    except json.JSONDecodeError as err:
+                        log.warning("skip malformed line: %s", err)
 
-    def _fetch_with_retry(self, url: str) -> bytes:
+    def _fetch_with_retry(self, url: str, sink: IO[bytes]) -> int:
         last_exc: Exception | None = None
 
         for attempt in range(1, self._max_retries + 1):
+            sink.seek(0)
+            sink.truncate()
             try:
-                return self.get_http(url, self._timeout)
+                return self.stream_http(url, self._timeout, sink)
             except httpx.HTTPStatusError as exc:
                 last_exc = exc
                 status = exc.response.status_code
@@ -82,8 +89,16 @@ class GharchiveClient:
         raise RuntimeError(f"failed to fetch {url} after {self._max_retries} attempts") from last_exc
 
     @staticmethod
-    def get_http(url: str, timeout: float) -> bytes:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            response = client.get(url)
+    def stream_http(url: str, timeout: float, sink: IO[bytes]) -> int:
+        """Stream the response body into `sink` in fixed-size chunks; return bytes written."""
+        written = 0
+        with (
+            httpx.Client(timeout=timeout, follow_redirects=True) as client,
+            client.stream("GET", url) as response,
+        ):
             response.raise_for_status()
-            return response.content
+            for chunk in response.iter_bytes(chunk_size=DOWNLOAD_CHUNK_BYTES):
+                sink.write(chunk)
+                written += len(chunk)
+        sink.flush()
+        return written

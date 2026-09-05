@@ -25,8 +25,8 @@ variable "lag_hours" {
 
 variable "catchup_hours" {
   type        = number
-  description = "Extra hours behind lag_hours to re-attempt on each scheduled run. Idempotent (skips hours with _SUCCESS marker), so cost is near-zero. Provides automatic gap recovery without a separate backfill job."
-  default     = 3
+  description = "Extra hours behind lag_hours to re-attempt on each scheduled run. Idempotent (skips hours with _SUCCESS marker), so cost is near-zero. Sets the width of the gap the pipeline can self-heal without a manual backfill: an outage longer than this leaves a permanent hole."
+  default     = 12
   validation {
     condition     = var.catchup_hours >= 0
     error_message = "catchup_hours must be >= 0."
@@ -65,8 +65,8 @@ variable "cloud_run_job_max_retries" {
 
 variable "cloud_run_job_timeout" {
   type        = string
-  description = "Cloud Run Job task timeout (e.g. \"900s\")."
-  default     = "900s"
+  description = "Cloud Run Job task timeout (e.g. \"900s\"). Must cover catchup_hours + 1 hours of processing in the worst case."
+  default     = "1800s"
 }
 
 variable "cloud_run_job_cpu" {
@@ -77,6 +77,6 @@ variable "cloud_run_job_cpu" {
 
 variable "cloud_run_job_memory" {
   type        = string
-  description = "Cloud Run Job container memory limit (e.g. \"1Gi\")."
-  default     = "1Gi"
+  description = "Cloud Run Job container memory limit (e.g. \"2Gi\"). Note that Cloud Run mounts /tmp as tmpfs, so spooled temp files count against this."
+  default     = "2Gi"
 }
