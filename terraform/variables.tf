@@ -77,6 +77,6 @@ variable "cloud_run_job_cpu" {
 
 variable "cloud_run_job_memory" {
   type        = string
-  description = "Cloud Run Job container memory limit (e.g. \"1Gi\")."
-  default     = "1Gi"
+  description = "Cloud Run Job container memory limit (e.g. \"4Gi\"). The ingest job materializes a full GH Archive hour in memory, so this must exceed the hourly peak RSS. Up to \"4Gi\" is allowed with 1 vCPU."
+  default     = "4Gi"
 }
