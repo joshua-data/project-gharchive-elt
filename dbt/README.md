@@ -3,10 +3,10 @@
 **What this is:** the dbt project that transforms the raw GitHub Archive event stream into curated facts and dimensions under the `dw` BigQuery dataset. Lives inside the monorepo so infra (Terraform), ingest, and transformation evolve together.
 
 **How it runs:**
-- **Daily batch** — GitHub Actions workflow [`dbt-run.yml`](../.github/workflows/dbt-run.yml) fires at `17 6 * * *` UTC. It impersonates the `gharchive-dbt-runner` service account via Workload Identity Federation (no keys) and runs `dbt build --target prod`. On every push to `main` that touches `dbt/**`, the workflow additionally regenerates docs and pushes them to the [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io) repo under `project-gharchive-elt/dbt-docs/`.
+- **Manual batch (paused since September 2026)** — GitHub Actions workflow [`dbt-run.yml`](../.github/workflows/dbt-run.yml) now runs only via input-less `workflow_dispatch`. The daily `17 6 * * *` UTC schedule and the push-to-`main` trigger were removed when the project entered maintenance mode; ingestion keeps running hourly. The workflow still impersonates the `gharchive-dbt-runner` service account via Workload Identity Federation (no keys) and runs `dbt build --target prod`.
 - **Local development & backfill** — you run as yourself via `gcloud auth application-default login`. No service account keys, no impersonation.
 
-**Where docs live:** <https://joshua-data.github.io/project-gharchive-elt/dbt-docs/> (refreshed on every push to `main` that touches `dbt/**`).
+**Where docs live:** <https://joshua-data.github.io/project-gharchive-elt/dbt-docs/> (frozen at the last automated publish; docs republishing was tied to the removed push trigger).
 
 > ↩ Back to [project overview](../README.md). For raw layer infra → [`../terraform/README.md`](../terraform/README.md). For raw layer pipeline → [`../ingest/README.md`](../ingest/README.md).
 
@@ -199,18 +199,17 @@ The `prod` profile uses `method: oauth`, so it picks up ADC directly. The projec
 
 Skip `dbt source freshness` (it checks the live source, which says nothing about a historical window) and `dbt docs generate` (a backfill should not republish docs).
 
-**`workflow_dispatch` is deliberately not wired into `dbt-run.yml`.** This is a public repository and that workflow impersonates `gharchive-dbt-runner`, which can write to `dw`; a manual trigger taking free-form date inputs widens that surface for no real gain. `dbt-run.yml` keeps its two triggers (`schedule`, `push` to `main`), both of which always resolve `batch_date` to yesterday UTC — so CI can never target a historical day, by design. Backfills are a local, owner-run operation.
+**`workflow_dispatch` in `dbt-run.yml` deliberately takes no inputs.** This is a public repository and that workflow impersonates `gharchive-dbt-runner`, which can write to `dw`; a manual trigger taking free-form date inputs would widen that surface for no real gain. Since the project entered maintenance mode (September 2026), an input-less `workflow_dispatch` is the workflow's only trigger — it still resolves `batch_date` to yesterday UTC internally, so CI can never target a historical day, by design. Backfills remain a local, owner-run operation.
 
 ## CI/CD
 
 | When | Workflow | What it does |
 |---|---|---|
-| `17 6 * * *` UTC | `.github/workflows/dbt-run.yml` (`schedule`) | `dbt debug` → cache `dbt_packages/` → `dbt deps` → `dbt source freshness` (warn-only, won't block) → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'` |
-| `push` → `main` on `dbt/**` (excluding `dbt/README.md`) or the workflow file | `.github/workflows/dbt-run.yml` (`push`) | Same build steps as the scheduled run, plus `dbt docs generate` + publish docs to `joshua-data.github.io/project-gharchive-elt/dbt-docs/`. Every merge that touches `dbt/` therefore re-runs prod once and refreshes docs. |
-| Manual | *(none — by design)* | `workflow_dispatch` is deliberately not wired up: public repo, and the workflow can write to `dw`. Backfills run locally — see [Backfill](#backfill) |
+| Manual (`workflow_dispatch`, no inputs) | `.github/workflows/dbt-run.yml` | `dbt debug` → cache `dbt_packages/` → `dbt deps` → `dbt source freshness` (warn-only, won't block) → resolve `batch_date` (yesterday UTC) → `dbt build --target prod --vars '{batch_date: ...}'`. Docs generate/publish steps are gated on push events and therefore skipped. |
+| Schedule / push | *(removed — September 2026)* | The daily `17 6 * * *` UTC schedule and the push-to-`main` trigger were removed when the project entered maintenance mode. Their run history remains under the workflow's Actions tab. |
 | PR | *(none — by design)* | dbt CI is not run on PRs; the WIF attribute condition refuses non-`main` refs |
 
-Both triggers (schedule and push-to-`main`) run against `main`, so they satisfy the WIF condition `assertion.ref == "refs/heads/main"`. The `dbt-runner` SA is impersonated using the same WIF pool as `terraform.yml` / `ingest-deploy.yml`.
+Manual dispatches run against `main`, so they satisfy the WIF condition `assertion.ref == "refs/heads/main"`. The `dbt-runner` SA is impersonated using the same WIF pool as `terraform.yml` / `ingest-deploy.yml`.
 
 ## Required GitHub secrets (in addition to the existing four)
 
