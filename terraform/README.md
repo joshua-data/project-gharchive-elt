@@ -33,7 +33,7 @@ flowchart LR
     subgraph INFRA["☁️ GCP Resources"]
         direction TB
         AR["📦 Artifact Registry<br/><i>gharchive (Docker)</i>"]
-        SCH["📅 Cloud Scheduler<br/><i>gharchive</i>"]
+        SCH["📅 Cloud Scheduler<br/><i>gharchive (paused)</i>"]
         JOB["⚡ Cloud Run Job<br/><i>gharchive</i>"]
     end
 
@@ -99,7 +99,7 @@ flowchart LR
 | `bigquery.tf` | Three datasets in `var.region`: `raw__gharchive` (raw layer) with external table `ext__events` over `gs://{bucket}/events/*.parquet` with `hive_partitioning_options.mode = "AUTO"` and `autodetect = true` (`deletion_protection = true`); `dw` (curated layer) where the scheduled dbt run materializes models; and `dw_dev` (local-development counterpart of `dw`, used by `profiles.yml`'s `dev` target). Note: at least one Parquet file must exist under the raw prefix before the external table is created — `autodetect` reads it to infer the schema. |
 | `artifact_registry.tf` | Docker repo `gharchive` with two cleanup policies — keep the 10 most-recent versions, delete untagged images older than 24 h. |
 | `cloud_run_job.tf` | Job `gharchive` running as the `gharchive-runner` SA, env vars `GCS_RAW_BUCKET` / `LAG_HOURS` / `CATCHUP_HOURS`, CPU/memory/timeout from variables, `max_retries = 1`. Uses Google's placeholder `cloudrun/container/job` image at bootstrap; `lifecycle.ignore_changes = [containers[0].image]` so the CI image tag updates don't get reverted on `terraform apply`. |
-| `cloud_scheduler.tf` | Cron job that POSTs to the Job's `:run` admin endpoint as the `gharchive-invoker` SA. Retry policy: `retry_count = 0`, min/max backoff 30s/300s, `max_doublings = 3` — intentional (see *Operational notes*). |
+| `cloud_scheduler.tf` | Cron job that POSTs to the Job's `:run` admin endpoint as the `gharchive-invoker` SA. Currently `paused = true` (see *Operational notes*). Retry policy: `retry_count = 0`, min/max backoff 30s/300s, `max_doublings = 3` — intentional (see *Operational notes*). |
 | `iam.tf` | The four service accounts and their role bindings — see [Service accounts](#service-accounts) below for the design choices. |
 | `wif.tf` | Pool `github-pool` + OIDC provider `github-provider`. Attribute mapping (`google.subject`, `attribute.repository`, `attribute.ref`, `attribute.actor`) and an **attribute condition** that hard-locks the provider to this repo on `main` only — PR branches cannot mint a token, so neither `gharchive-ci-deployer` nor `gharchive-dbt-runner` is reachable from any PR workflow. Both SAs grant `roles/iam.workloadIdentityUser` to the same `principalSet` (the repo). Schedule workflows (e.g. dbt daily run) check out at the default branch (`main`), so they pass the condition. |
 | `main.tf` | Provider pin (`google ~> 5.40`), `terraform >= 1.6.0`, GCS backend (`bucket` & `prefix` passed at `init` time). |
@@ -146,7 +146,7 @@ No service-account key files are issued or stored anywhere.
 ## Input variables
 
 - **Required (3)** — `project_id`, `region`, `github_repo`. No defaults; supply via `terraform.tfvars` (local) or `TF_VAR_*` env vars (CI sets these from GitHub secrets/variables + `${{ github.repository }}`).
-- **Operational defaults (8)** — ingest lag/catchup, scheduler cron, Cloud Run sizing, retry counts. See `variables.tf` for the full list and validators; defaults are tuned for the portfolio workload and rarely need changing.
+- **Operational defaults (9)** — ingest lag/catchup, scheduler cron and pause switch, Cloud Run sizing, retry counts. See `variables.tf` for the full list and validators; defaults are tuned for the portfolio workload and rarely need changing.
 
 For local runs, copy `terraform.tfvars.example` → `terraform.tfvars` and fill in the three required values. `terraform.tfvars` is gitignored — CI gets the same values via `TF_VAR_*` from GitHub Actions secrets/variables.
 
@@ -233,6 +233,7 @@ ci_deployer is a high-privilege identity (project IAM admin). The blast-radius m
 
 A few choices in here look conservative — they're deliberate:
 
+- **`scheduler_paused = true` (since September 2026).** The project is a portfolio artifact, not a live service, and the only recurring GCP charge it generated was the hourly Cloud Run Job execution plus the raw bytes each run added to GCS. Pausing the scheduler stops both at the source while leaving the whole stack — Job definition, cron expression, invoker SA, IAM, external table — provisioned and inspectable, which is what the repo is meant to demonstrate. Deleting the scheduler resource instead would have made the "how does it get triggered" part of the architecture unreadable. Cloud Scheduler itself bills per job, not per execution, and stays inside the free tier. To resume: set `scheduler_paused = false` and `terraform apply`. Because `CATCHUP_HOURS` only reaches a few hours back, a long pause leaves a permanent gap in GCS — fill it with a local backfill (see [`ingest/README.md`](../ingest/README.md)), not by waiting for catch-up.
 - **`scheduler_retry_count = 0` + `cloud_run_job_max_retries = 1`.** The ingest container already retries every HTTP fetch up to 5× (`GharchiveClient._fetch_with_retry`) and re-attempts gap hours every run via `CATCHUP_HOURS`. Adding scheduler retries would risk a second invocation racing a still-running first one, and Cloud Run Job retries can't distinguish "really failed" from "gharchive hasn't published this hour yet". See [`ingest/README.md`](../ingest/README.md) for the retry semantics.
 - **GCS lifecycle tiering (30d → Nearline, 90d → Coldline, 180d → delete).** Hot partitions stay on Standard for BigQuery query performance; older partitions get cheaper without breaking the external table (BigQuery reads all three classes transparently). 180-day retention is sized for portfolio/demo analytics — bump it via `gcs_delete_age_days` in `locals.tf` if you need a longer window.
 - **Dataset-scoped `bigquery.dataOwner` on `raw__gharchive` / `dw` / `dw_dev`, project-wide `bigquery.jobUser` + `bigquery.dataEditor`.** ci_deployer fully owns the three project-managed datasets and can run jobs / edit data project-wide; it does not get `dataOwner` on datasets it didn't create. dbt_runner is narrower: read-only on `raw__gharchive`, writer on `dw` / `dw_dev`.

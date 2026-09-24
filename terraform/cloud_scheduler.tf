@@ -3,6 +3,7 @@ resource "google_cloud_scheduler_job" "gharchive" {
   region      = var.region
   schedule    = var.schedule_cron
   time_zone   = local.scheduler_timezone
+  paused      = var.scheduler_paused
   description = "Triggers gharchive Cloud Run Job"
 
   retry_config {
