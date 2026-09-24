@@ -43,6 +43,12 @@ variable "schedule_cron" {
   }
 }
 
+variable "scheduler_paused" {
+  type        = bool
+  description = "Whether the Cloud Scheduler job is paused. Default true: the project is in maintenance mode, so hourly ingestion does not fire and the Cloud Run Job incurs no compute cost. Set to false to resume hourly ingestion — the job definition, cron, and IAM stay provisioned either way."
+  default     = true
+}
+
 variable "scheduler_retry_count" {
   type        = number
   description = "Cloud Scheduler retry count on HTTP target failure. Recommended 0: scheduler retries can fire while a prior job is still running. Recovery is handled by catchup_hours and the source-level HTTP retry loop."

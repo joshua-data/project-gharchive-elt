@@ -6,6 +6,8 @@
 
 **Where to start reading code:** `src/gharchive/__main__.py` — `main()` → `run()` → `resolve_target_hours()` → `process_hour()` is the whole pipeline.
 
+> **Scheduled runs are paused (September 2026).** The Cloud Scheduler job that fires this container hourly is `paused = true` — see [`terraform/README.md`](../terraform/README.md). Everything below still describes the container's behaviour; it now runs only when invoked by hand (`gcloud run jobs execute gharchive`), locally, or after `scheduler_paused` is set back to `false`.
+
 > ↩ Back to [project overview](../README.md).
 
 ## Internal call graph

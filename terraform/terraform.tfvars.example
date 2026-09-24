@@ -6,6 +6,7 @@ lag_hours     = 1
 catchup_hours = 3
 
 schedule_cron         = "30 * * * *"
+scheduler_paused      = true
 scheduler_retry_count = 0
 
 cloud_run_job_max_retries = 1

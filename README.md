@@ -2,9 +2,11 @@
 
 **What this is:** an hourly **ELT pipeline** that ingests [GitHub Archive](https://www.gharchive.org/) events into Google Cloud, plus a **dbt transformation layer** that builds curated facts and dimensions on top. Raw events land as Hive-partitioned Parquet in GCS (exposed via a BigQuery external table); dbt builds curated models into a separate `dw` dataset daily.
 
+> **Maintenance mode (September 2026).** Both schedules are off: the Cloud Scheduler job that triggers hourly ingestion is `paused = true` (`terraform/variables.tf` → `scheduler_paused`), and the dbt workflow runs only on manual dispatch. The infrastructure stays fully provisioned and the data already landed stays queryable — only the recurring compute is stopped. Flip `scheduler_paused` to `false` and `terraform apply` to resume ingestion.
+
 **How it runs:**
-- **Ingest (hourly):** a Python container executes as a **Cloud Run Job**, triggered every hour by **Cloud Scheduler**. Built and deployed by GitHub Actions on every push to `main`.
-- **Transform (paused since September 2026):** GitHub Actions workflow `dbt-run` runs `dbt build` against BigQuery, now only via manual `workflow_dispatch`. The daily schedule (`17 6 * * *` UTC) and the push-to-`main` trigger (which also republished dbt docs to [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io)) were removed when the project entered maintenance mode; ingestion keeps running hourly.
+- **Ingest (hourly, paused since September 2026):** a Python container executes as a **Cloud Run Job**, triggered by **Cloud Scheduler** on a `30 * * * *` UTC cron. The scheduler job is currently paused, so no invocations fire. Built and deployed by GitHub Actions on every push to `main`.
+- **Transform (paused since September 2026):** GitHub Actions workflow `dbt-run` runs `dbt build` against BigQuery, now only via manual `workflow_dispatch`. The daily schedule (`17 6 * * *` UTC) and the push-to-`main` trigger (which also republished dbt docs to [`joshua-data.github.io`](https://github.com/joshua-data/joshua-data.github.io)) were removed when the project entered maintenance mode.
 - **Visualize (daily):** a second GitHub Actions workflow (`evidence-build`, chained to `dbt-run` via `workflow_run`, plus push on `evidence/**` and manual `workflow_dispatch`) builds an [Evidence.dev](https://evidence.dev) static BI site from the curated marts and publishes it alongside dbt docs on GitHub Pages.
 
 **How it's managed:** all GCP infrastructure (bucket, datasets, table, Cloud Run Job, scheduler, service accounts, IAM, WIF) lives in one Terraform root module under `terraform/`. All four workflows (terraform, ingest-deploy, dbt-run, evidence-build) authenticate via **Workload Identity Federation** — no service-account keys exist anywhere in the repo or in GitHub.
@@ -24,7 +26,7 @@ flowchart LR
     subgraph GCP["☁️ Google Cloud Platform"]
         direction TB
         AR["📦 Artifact Registry<br/><i>gharchive</i>"]
-        SCH["📅 Cloud Scheduler<br/><i>30 * * * *</i>"]
+        SCH["📅 Cloud Scheduler<br/><i>30 * * * * (paused)</i>"]
         JOB["⚡ Cloud Run Job<br/><i>gharchive</i>"]
         GCS["🗄️ GCS bucket<br/><i>events/dt=…/hr=…/*.parquet</i>"]
         BQ["📊 BigQuery external table<br/><i>raw__gharchive.ext__events</i>"]
@@ -67,7 +69,7 @@ flowchart LR
 
 ## End-to-end flow
 
-1. **Cloud Scheduler** fires at `30 * * * *` UTC and POSTs to the Cloud Run Job admin API, authenticating as the `gharchive-invoker` service account.
+1. **Cloud Scheduler** fires at `30 * * * *` UTC and POSTs to the Cloud Run Job admin API, authenticating as the `gharchive-invoker` service account. *(Paused since September 2026 — steps 1–6 no longer run on their own; they still describe what an unpaused run, or a manual `gcloud run jobs execute gharchive`, does.)*
 2. **Cloud Run Job** starts the container as `gharchive-runner`. The job resolves which hours to process from `LAG_HOURS` / `CATCHUP_HOURS` (defaulting to "the hour that finished `LAG_HOURS` ago, plus the previous `CATCHUP_HOURS` for gap recovery").
 3. For each target hour, the container checks for a `_SUCCESS` marker in GCS and skips if present (idempotent re-runs).
 4. Otherwise it downloads `https://data.gharchive.org/{YYYY-MM-DD-H}.json.gz` with a retry loop (404/5xx/network → retry up to 5×, backoff capped at 60s).
@@ -80,7 +82,7 @@ flowchart LR
 
 - **Runtime:** Python 3.12 (`httpx`, `pyarrow`, `pydantic-settings`, `google-cloud-storage`)
 - **Container:** Docker, base `python:3.12-slim`, non-root user
-- **Orchestration:** Cloud Run Job + Cloud Scheduler (ingest); GitHub Actions `workflow_dispatch` (dbt, schedule paused)
+- **Orchestration:** Cloud Run Job + Cloud Scheduler (ingest, scheduler paused); GitHub Actions `workflow_dispatch` (dbt, schedule paused)
 - **Storage:** GCS (raw Parquet) → BigQuery external table (`raw__gharchive.ext__events`) → BigQuery curated (`dw`)
 - **Transformation:** dbt-core / dbt-bigquery `1.11`, OAuth (ADC + WIF impersonation)
 - **IaC:** Terraform `>= 1.6`, Google provider `~> 5.40`, state in GCS
@@ -92,7 +94,7 @@ flowchart LR
 There's no shortcut: the infra has to exist before the ingest job can run, and ingest needs to produce data before dbt has anything to transform. Do them in order:
 
 1. **Provision infra** → [`terraform/README.md`](terraform/README.md) (bootstrap state bucket, `terraform apply`, copy outputs to GitHub secrets including the new `DBT_RUNNER_SA_EMAIL`).
-2. **Deploy ingest** → push to `main`; `ingest-deploy.yml` builds the image and points the Cloud Run Job at it. Wait for at least one hourly run to land Parquet in GCS.
+2. **Deploy ingest** → push to `main`; `ingest-deploy.yml` builds the image and points the Cloud Run Job at it. Wait for at least one hourly run to land Parquet in GCS — with `scheduler_paused = true` (the current default) no run fires on its own, so either set it to `false` or trigger one manually with `gcloud run jobs execute gharchive --region <region>`.
 3. **Develop or backfill locally** → [`ingest/README.md`](ingest/README.md) (Python venv + ADC, or the `scripts/backfill.sh` Docker wrapper).
 4. **Write dbt models** → [`dbt/README.md`](dbt/README.md) (local: `gcloud auth application-default login` + `dbt build --target dev`). Add the `DBT_DOCS_DEPLOY_TOKEN` secret (PAT for `joshua-data.github.io`) before the scheduled `dbt-run.yml` can publish docs.
 5. **Author Evidence pages** → [`evidence/README.md`](evidence/README.md) (local: same ADC as dbt, `npm install && npm run dev`). Evidence deploy reuses the `DBT_DOCS_DEPLOY_TOKEN` secret added in step 4 — no extra secret needed. The first auto-deploy happens after the next successful `dbt-run` on `main` (via `workflow_run` chain).
