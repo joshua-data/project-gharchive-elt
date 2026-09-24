@@ -68,6 +68,12 @@ resource "google_service_account_iam_member" "ci_deployer_acts_as_runner" {
   member             = "serviceAccount:${google_service_account.ci_deployer.email}"
 }
 
+resource "google_service_account_iam_member" "ci_deployer_acts_as_scheduler" {
+  service_account_id = google_service_account.scheduler.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.ci_deployer.email}"
+}
+
 resource "google_project_iam_member" "ci_deployer_bq_project_roles" {
   for_each = toset(local.ci_deployer_bq_project_roles)
   project  = var.project_id
