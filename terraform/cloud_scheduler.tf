@@ -22,5 +22,6 @@ resource "google_cloud_scheduler_job" "gharchive" {
   depends_on = [
     google_project_service.api_enabled,
     google_project_iam_member.scheduler_roles,
+    google_service_account_iam_member.ci_deployer_acts_as_scheduler,
   ]
 }
